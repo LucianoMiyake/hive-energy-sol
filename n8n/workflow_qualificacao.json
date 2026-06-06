@@ -1,0 +1,644 @@
+﻿{
+    "name":  "Hive Energy - Qualificacao Inbound",
+    "nodes":  [
+                  {
+                      "id":  "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+                      "name":  "Webhook Bolten",
+                      "type":  "n8n-nodes-base.webhook",
+                      "typeVersion":  2,
+                      "position":  [
+                                       100,
+                                       300
+                                   ],
+                      "parameters":  {
+                                         "httpMethod":  "POST",
+                                         "path":  "bolten-hive-energy",
+                                         "responseMode":  "onReceived",
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "webhookId":  "bolten-hive-energy-001"
+                  },
+                  {
+                      "id":  "7c9e6679-7425-4a3c-8c8e-0ec69b3a5b47",
+                      "name":  "Extrai Dados Webhook",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       300,
+                                       300
+                                   ],
+                      "parameters":  {
+                                         "jsCode":  "const body = $input.first().json.body;\n\nif (body.fromMe === true) throw new Error(\u0027SKIP: mensagem enviada pelo bot\u0027);\nif (!body.text?.message) throw new Error(\u0027SKIP: mensagem sem texto (midia/evento)\u0027);\n\nconst telefone = (body.phone || \u0027\u0027).toString().replace(/\\D/g, \u0027\u0027);\nconst nome = (body.senderName || body.chatName || \u0027Lead\u0027).toString();\nconst mensagem = body.text.message.toString().trim();\nconst timestamp = new Date().toISOString();\n\nif (!telefone) throw new Error(\u0027Telefone nao encontrado: \u0027 + JSON.stringify(body));\n\nreturn [{ json: { telefone, nome, mensagem, timestamp } }];"
+                                     }
+                  },
+                  {
+                      "id":  "9b2a1c5e-3d6f-4e7a-8b9c-0d1e2f3a4b5c",
+                      "name":  "Busca Lead no Sheets",
+                      "type":  "n8n-nodes-base.googleSheets",
+                      "typeVersion":  4.5,
+                      "position":  [
+                                       500,
+                                       300
+                                   ],
+                      "alwaysOutputData":  true,
+                      "parameters":  {
+                                         "operation":  "read",
+                                         "documentId":  {
+                                                            "__rl":  true,
+                                                            "value":  "https://docs.google.com/spreadsheets/d/11pLg8OUm49-GEp853zHgNbqFeIyv2W9xsNbb4_NjCaI/edit?gid=151741956#gid=151741956",
+                                                            "mode":  "url"
+                                                        },
+                                         "sheetName":  {
+                                                           "__rl":  true,
+                                                           "value":  "Leads",
+                                                           "mode":  "name"
+                                                       },
+                                         "filtersUI":  {
+                                                           "values":  [
+                                                                          {
+                                                                              "lookupColumn":  "Telefone",
+                                                                              "lookupValue":  "={{ $json.telefone }}"
+                                                                          }
+                                                                      ]
+                                                       },
+                                         "options":  {
+                                                         "returnAllMatches":  false
+                                                     }
+                                     },
+                      "credentials":  {
+                                          "googleSheetsOAuth2Api":  {
+                                                                        "id":  "Z2X92BGsOYGnRAz8",
+                                                                        "name":  "Google Sheets OAuth"
+                                                                    }
+                                      }
+                  },
+                  {
+                      "id":  "2a3b4c5d-6e7f-8a9b-0c1d-2e3f4a5b6c7d",
+                      "name":  "Prepara Contexto Claude",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1160,
+                                       300
+                                   ],
+                      "parameters":  {
+                                         "jsCode":  "const { telefone, nome, mensagem, timestamp } = $(\u0027Extrai Dados Webhook\u0027).first().json;\nconst sheetsData = $(\u0027Busca Lead no Sheets\u0027).first().json;\nconst isNovoLead = !sheetsData.Telefone;\n\nconst promptTemplate = $(\u0027Busca Prompt GitHub\u0027).first().json.data;\nconst config = JSON.parse($(\u0027Busca Config GitHub\u0027).first().json.data);\nconst tabelaDescontos = config.descontos;\nconst links = config.links;\n\nlet leadData;\nlet historico = [];\n\nif (!isNovoLead) {\n  leadData = sheetsData;\n  try { historico = JSON.parse(leadData.Historico || \u0027[]\u0027); } catch(e) { historico = []; }\n} else {\n  leadData = {\n    Telefone: telefone, Nome: nome, Cidade: \u0027\u0027, Estado: \u0027\u0027, Concessionaria: \u0027\u0027,\n    ValorConta: \u0027\u0027, Desconto: \u0027\u0027, EconomiaEstimada: \u0027\u0027, Status: \u0027Novo Lead\u0027,\n    ScriptAtivo: \u0027A\u0027, FaixaAtiva: \u0027\u0027, Historico: \u0027[]\u0027, FollowupCount: \u00270\u0027,\n    LinkEnviado: \u0027false\u0027, UltimoContato: timestamp, ProximoFollowup: \u0027\u0027, CriadoEm: timestamp\n  };\n}\n\nhistorico.push({ role: \u0027user\u0027, content: mensagem });\nif (historico.length \u003e 50) historico = historico.slice(-50);\n\nconst faixaAtiva = leadData.FaixaAtiva ? parseInt(leadData.FaixaAtiva) : null;\nconst estadoAtual = leadData.Estado || \u0027\u0027;\nconst infoEstado = tabelaDescontos[estadoAtual] || null;\nconst descontoAtual = (infoEstado \u0026\u0026 faixaAtiva) ? (infoEstado.faixas[faixaAtiva] || null) : null;\n\nconst systemPrompt = [\n  promptTemplate,\n  \u0027\u0027,\n  \u0027TABELA DE DESCONTOS: \u0027 + JSON.stringify(tabelaDescontos),\n  \u0027LINKS: Faixa 1: \u0027 + links[\u00271\u0027] + \u0027 | Faixa 2: \u0027 + links[\u00272\u0027] + \u0027 | Faixa 3: \u0027 + links[\u00273\u0027],\n  \u0027\u0027,\n  \u0027DADOS DO LEAD\u0027,\n  \u0027Nome: \u0027 + (leadData.Nome || nome),\n  \u0027Cidade: \u0027 + (leadData.Cidade || \u0027nao informada\u0027),\n  \u0027Estado: \u0027 + (estadoAtual || \u0027nao informado\u0027),\n  \u0027Valor da Conta: \u0027 + (leadData.ValorConta ? \u0027R$\u0027 + leadData.ValorConta : \u0027nao informado\u0027),\n  \u0027Faixa ativa: \u0027 + (faixaAtiva || \u0027nao definida\u0027),\n  \u0027Desconto atual: \u0027 + (descontoAtual ? descontoAtual + \u0027%\u0027 : \u0027nao definido\u0027),\n  \u0027Status: \u0027 + leadData.Status,\n  \u0027Script ativo: \u0027 + leadData.ScriptAtivo\n].join(\u0027\\n\u0027);\n\nreturn [{\n  json: {\n    ...leadData,\n    Telefone: telefone,\n    Nome: nome || leadData.Nome,\n    UltimoContato: timestamp,\n    isNovoLead,\n    historico,\n    systemPrompt,\n    links,\n    tabelaDescontos\n  }\n}];"
+                                     }
+                  },
+                  {
+                      "id":  "3b4c5d6e-7f8a-9b0c-1d2e-3f4a5b6c7d8e",
+                      "name":  "Claude API",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       1360,
+                                       300
+                                   ],
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "https://api.anthropic.com/v1/messages",
+                                         "authentication":  "genericCredentialType",
+                                         "genericAuthType":  "httpHeaderAuth",
+                                         "sendHeaders":  true,
+                                         "headerParameters":  {
+                                                                  "parameters":  [
+                                                                                     {
+                                                                                         "name":  "anthropic-version",
+                                                                                         "value":  "2023-06-01"
+                                                                                     },
+                                                                                     {
+                                                                                         "name":  "content-type",
+                                                                                         "value":  "application/json"
+                                                                                     }
+                                                                                 ]
+                                                              },
+                                         "sendBody":  true,
+                                         "contentType":  "raw",
+                                         "rawContentType":  "application/json",
+                                         "body":  "={\n  \"model\": \"claude-sonnet-4-6\",\n  \"max_tokens\": 1024,\n  \"system\": {{ JSON.stringify($json.systemPrompt) }},\n  \"messages\": {{ JSON.stringify($json.historico) }}\n}",
+                                         "options":  {
+                                                         "timeout":  30000
+                                                     }
+                                     },
+                      "credentials":  {
+                                          "httpHeaderAuth":  {
+                                                                 "id":  "MqCilB8Jbjl6a27T",
+                                                                 "name":  "Claude API Key"
+                                                             }
+                                      }
+                  },
+                  {
+                      "id":  "4c5d6e7f-8a9b-0c1d-2e3f-4a5b6c7d8e9f",
+                      "name":  "Processa Resposta Claude",
+                      "type":  "n8n-nodes-base.code",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1560,
+                                       300
+                                   ],
+                      "parameters":  {
+                                         "jsCode":  "const leadData = $(\u0027Prepara Contexto Claude\u0027).first().json;\nconst response = $input.first().json;\nconst rawText = response.content[0].text.trim();\n\nconst tabelaDescontos = leadData.tabelaDescontos || {};\n\nlet parsed;\ntry {\n  const jsonMatch = rawText.match(/\\{[\\s\\S]*\\}/);\n  const cleaned = jsonMatch ? jsonMatch[0] : rawText;\n  parsed = JSON.parse(cleaned);\n} catch(e) {\n  parsed = {\n    resposta: rawText,\n    status: leadData.Status || \u0027Em Qualificacao\u0027,\n    cidade: leadData.Cidade || null,\n    estado: leadData.Estado || null,\n    valor_conta: null,\n    economia_estimada: null,\n    script_ativo: leadData.ScriptAtivo || \u0027A\u0027,\n    faixa_ativa: leadData.FaixaAtiva ? parseInt(leadData.FaixaAtiva) : null,\n    encaminhar_humano: false,\n    link_enviado: false\n  };\n}\n\nconst historico = leadData.historico || [];\nhistorico.push({ role: \u0027assistant\u0027, content: parsed.resposta });\n\nconst agora = new Date();\nconst proximoFollowup24h = new Date(agora.getTime() + 24 * 60 * 60 * 1000).toISOString();\nconst statusFinal = parsed.encaminhar_humano ? \u0027Aguardando Humano\u0027 : (parsed.status || leadData.Status);\n\n// Bug 2: ScriptAtivo travado em B quando já era B\nconst scriptAtivo = leadData.ScriptAtivo === \u0027B\u0027 ? \u0027B\u0027 : (parsed.script_ativo || leadData.ScriptAtivo || \u0027A\u0027);\n\n// Bug 3: FollowupCount preservado\nconst followupCount = leadData.FollowupCount || \u00270\u0027;\n\nconst faixaAtiva = parsed.faixa_ativa || (leadData.FaixaAtiva ? parseInt(leadData.FaixaAtiva) : null) || \u0027\u0027;\n\n// Bug 4: Desconto calculado da faixa + estado\nconst estadoFinal = parsed.estado || leadData.Estado || \u0027\u0027;\nconst infoEstado = tabelaDescontos[estadoFinal] || null;\nconst descontoCalculado = (infoEstado \u0026\u0026 faixaAtiva) ? (infoEstado.faixas[faixaAtiva] || null) : null;\nconst descontoFinal = descontoCalculado !== null ? descontoCalculado : (leadData.Desconto || \u0027\u0027);\n\n// Claude define concessionaria; SP nao recebe auto-fill (multiplas distribuidoras)\nconst concessionariaFinal = parsed.concessionaria\n  || (infoEstado \u0026\u0026 estadoFinal !== \u0027SP\u0027 ? infoEstado.concessionaria : null)\n  || leadData.Concessionaria\n  || \u0027\u0027;\n\nconst links = leadData.links || {\n  1: \u0027https://contaenergia.hiveglobal.com.br/?planId=d8fe77ecc3299e92\u0026sellerId=lucianomiyake\u0027,\n  2: \u0027https://contaenergia.hiveglobal.com.br/?planId=22f5eae2411265ef\u0026sellerId=lucianomiyake\u0027,\n  3: \u0027https://contaenergia.hiveglobal.com.br/?planId=de9ef5b8d2eeaae8\u0026sellerId=lucianomiyake\u0027\n};\n\nconst dadosAtualizados = {\n  Telefone: leadData.Telefone,\n  Nome: leadData.Nome,\n  Cidade: parsed.cidade || leadData.Cidade || \u0027\u0027,\n  Estado: estadoFinal,\n  Concessionaria: concessionariaFinal,\n  ValorConta: parsed.valor_conta || leadData.ValorConta || \u0027\u0027,\n  Desconto: descontoFinal,\n  EconomiaEstimada: parsed.economia_estimada || leadData.EconomiaEstimada || \u0027\u0027,\n  Status: statusFinal,\n  ScriptAtivo: scriptAtivo,\n  FaixaAtiva: faixaAtiva.toString(),\n  Historico: JSON.stringify(historico),\n  FollowupCount: followupCount,\n  LinkEnviado: parsed.link_enviado ? \u0027true\u0027 : (leadData.LinkEnviado || \u0027false\u0027),\n  UltimoContato: agora.toISOString(),\n  ProximoFollowup: statusFinal === \u0027Proposta Enviada\u0027 ? proximoFollowup24h : (leadData.ProximoFollowup || \u0027\u0027),\n  CriadoEm: leadData.CriadoEm || agora.toISOString()\n};\n\nconst emailFinal = parsed.email || leadData.Email || \u0027\u0027;\n\nreturn [{\n  json: {\n    ...dadosAtualizados,\n    Email: emailFinal,\n    respostaParaEnviar: parsed.resposta,\n    isNovoLead: leadData.isNovoLead,\n    encaminhar_humano: parsed.encaminhar_humano || false\n  }\n}];"
+                                     }
+                  },
+                  {
+                      "id":  "5d6e7f8a-9b0c-1d2e-3f4a-5b6c7d8e9f0a",
+                      "name":  "Envia Mensagem Z-API",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       1760,
+                                       300
+                                   ],
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "https://api.z-api.io/instances/3F433FCC71C4E22C72227269EBE9199A/token/DDC722677DD43B091EF89EBD/send-text",
+                                         "sendHeaders":  true,
+                                         "headerParameters":  {
+                                                                  "parameters":  [
+                                                                                     {
+                                                                                         "name":  "content-type",
+                                                                                         "value":  "application/json"
+                                                                                     },
+                                                                                     {
+                                                                                         "name":  "Client-Token",
+                                                                                         "value":  "Fbd02060e79e74608b765df205b0402adS"
+                                                                                     }
+                                                                                 ]
+                                                              },
+                                         "sendBody":  true,
+                                         "contentType":  "raw",
+                                         "rawContentType":  "application/json",
+                                         "body":  "={\n  \"phone\": \"{{ $json.Telefone }}\",\n  \"message\": {{ JSON.stringify($json.respostaParaEnviar) }}\n}",
+                                         "options":  {
+                                                         "timeout":  15000
+                                                     }
+                                     }
+                  },
+                  {
+                      "id":  "6e7f8a9b-0c1d-2e3f-4a5b-6c7d8e9f0a1b",
+                      "name":  "IF Lead Novo",
+                      "type":  "n8n-nodes-base.if",
+                      "typeVersion":  2,
+                      "position":  [
+                                       2360,
+                                       300
+                                   ],
+                      "parameters":  {
+                                         "conditions":  {
+                                                            "options":  {
+                                                                            "caseSensitive":  true,
+                                                                            "leftValue":  "",
+                                                                            "typeValidation":  "strict"
+                                                                        },
+                                                            "conditions":  [
+                                                                               {
+                                                                                   "id":  "cond-lead-novo",
+                                                                                   "leftValue":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.isNovoLead }}",
+                                                                                   "rightValue":  true,
+                                                                                   "operator":  {
+                                                                                                    "type":  "boolean",
+                                                                                                    "operation":  "equals"
+                                                                                                }
+                                                                               }
+                                                                           ],
+                                                            "combinator":  "and"
+                                                        }
+                                     }
+                  },
+                  {
+                      "id":  "7f8a9b0c-1d2e-3f4a-5b6c-7d8e9f0a1b2c",
+                      "name":  "Cria Lead no Sheets",
+                      "type":  "n8n-nodes-base.googleSheets",
+                      "typeVersion":  4.5,
+                      "position":  [
+                                       2560,
+                                       200
+                                   ],
+                      "parameters":  {
+                                         "operation":  "append",
+                                         "documentId":  {
+                                                            "__rl":  true,
+                                                            "value":  "https://docs.google.com/spreadsheets/d/11pLg8OUm49-GEp853zHgNbqFeIyv2W9xsNbb4_NjCaI/edit?gid=151741956#gid=151741956",
+                                                            "mode":  "url"
+                                                        },
+                                         "sheetName":  {
+                                                           "__rl":  true,
+                                                           "value":  "Leads",
+                                                           "mode":  "name"
+                                                       },
+                                         "columns":  {
+                                                         "mappingMode":  "defineBelow",
+                                                         "value":  {
+                                                                       "Telefone":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.Telefone }}",
+                                                                       "Nome":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.Nome }}",
+                                                                       "Cidade":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.Cidade }}",
+                                                                       "Estado":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.Estado }}",
+                                                                       "Concessionaria":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.Concessionaria }}",
+                                                                       "ValorConta":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.ValorConta }}",
+                                                                       "Desconto":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.Desconto }}",
+                                                                       "EconomiaEstimada":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.EconomiaEstimada }}",
+                                                                       "Status":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.Status }}",
+                                                                       "ScriptAtivo":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.ScriptAtivo }}",
+                                                                       "Historico":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.Historico }}",
+                                                                       "FollowupCount":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.FollowupCount }}",
+                                                                       "LinkEnviado":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.LinkEnviado }}",
+                                                                       "UltimoContato":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.UltimoContato }}",
+                                                                       "ProximoFollowup":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.ProximoFollowup }}",
+                                                                       "CriadoEm":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.CriadoEm }}",
+                                                                       "FaixaAtiva":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.FaixaAtiva }}",
+                                                                       "Email":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.Email }}"
+                                                                   },
+                                                         "matchingColumns":  [
+
+                                                                             ],
+                                                         "schema":  [
+
+                                                                    ]
+                                                     },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "credentials":  {
+                                          "googleSheetsOAuth2Api":  {
+                                                                        "id":  "Z2X92BGsOYGnRAz8",
+                                                                        "name":  "Google Sheets OAuth"
+                                                                    }
+                                      }
+                  },
+                  {
+                      "id":  "8a9b0c1d-2e3f-4a5b-6c7d-8e9f0a1b2c3d",
+                      "name":  "Atualiza Lead no Sheets",
+                      "type":  "n8n-nodes-base.googleSheets",
+                      "typeVersion":  4.5,
+                      "position":  [
+                                       2560,
+                                       400
+                                   ],
+                      "parameters":  {
+                                         "operation":  "update",
+                                         "documentId":  {
+                                                            "__rl":  true,
+                                                            "value":  "https://docs.google.com/spreadsheets/d/11pLg8OUm49-GEp853zHgNbqFeIyv2W9xsNbb4_NjCaI/edit?gid=151741956#gid=151741956",
+                                                            "mode":  "url"
+                                                        },
+                                         "sheetName":  {
+                                                           "__rl":  true,
+                                                           "value":  "Leads",
+                                                           "mode":  "name"
+                                                       },
+                                         "columns":  {
+                                                         "mappingMode":  "defineBelow",
+                                                         "value":  {
+                                                                       "Telefone":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.Telefone }}",
+                                                                       "Nome":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.Nome }}",
+                                                                       "Cidade":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.Cidade }}",
+                                                                       "Estado":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.Estado }}",
+                                                                       "Concessionaria":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.Concessionaria }}",
+                                                                       "ValorConta":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.ValorConta }}",
+                                                                       "Desconto":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.Desconto }}",
+                                                                       "EconomiaEstimada":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.EconomiaEstimada }}",
+                                                                       "Status":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.Status }}",
+                                                                       "ScriptAtivo":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.ScriptAtivo }}",
+                                                                       "Historico":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.Historico }}",
+                                                                       "FollowupCount":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.FollowupCount }}",
+                                                                       "LinkEnviado":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.LinkEnviado }}",
+                                                                       "UltimoContato":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.UltimoContato }}",
+                                                                       "ProximoFollowup":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.ProximoFollowup }}",
+                                                                       "CriadoEm":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.CriadoEm }}",
+                                                                       "FaixaAtiva":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.FaixaAtiva }}",
+                                                                       "Email":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.Email }}"
+                                                                   },
+                                                         "matchingColumns":  [
+                                                                                 "Telefone"
+                                                                             ],
+                                                         "schema":  [
+
+                                                                    ]
+                                                     },
+                                         "options":  {
+
+                                                     }
+                                     },
+                      "credentials":  {
+                                          "googleSheetsOAuth2Api":  {
+                                                                        "id":  "Z2X92BGsOYGnRAz8",
+                                                                        "name":  "Google Sheets OAuth"
+                                                                    }
+                                      }
+                  },
+                  {
+                      "id":  "qa-if-aguardando",
+                      "name":  "IF Aguardando Horario",
+                      "type":  "n8n-nodes-base.if",
+                      "typeVersion":  2,
+                      "position":  [
+                                       580,
+                                       300
+                                   ],
+                      "parameters":  {
+                                         "conditions":  {
+                                                            "options":  {
+                                                                            "caseSensitive":  true,
+                                                                            "typeValidation":  "strict"
+                                                                        },
+                                                            "conditions":  [
+                                                                               {
+                                                                                   "id":  "cond-aguardando",
+                                                                                   "leftValue":  "={{ $json.Status }}",
+                                                                                   "rightValue":  "Aguardando Escolha Horario",
+                                                                                   "operator":  {
+                                                                                                    "type":  "string",
+                                                                                                    "operation":  "equals"
+                                                                                                }
+                                                                               }
+                                                                           ],
+                                                            "combinator":  "and"
+                                                        }
+                                     }
+                  },
+                  {
+                      "id":  "qa-confirma-agenda",
+                      "name":  "Dispara Confirma Agendamento",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       760,
+                                       80
+                                   ],
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "https://miyakestrategy.app.n8n.cloud/webhook/hive-agendamento",
+                                         "sendBody":  true,
+                                         "contentType":  "raw",
+                                         "rawContentType":  "application/json",
+                                         "body":  "={\n  \"tipo\": \"confirma\",\n  \"telefone\": \"{{ $(\u0027Extrai Dados Webhook\u0027).first().json.telefone }}\",\n  \"nome\": \"{{ $json.Nome }}\",\n  \"mensagem\": {{ JSON.stringify($(\u0027Extrai Dados Webhook\u0027).first().json.mensagem) }},\n  \"slots_proposto\": {{ JSON.stringify($json.SlotsProposto) }}\n}",
+                                         "options":  {
+                                                         "timeout":  15000
+                                                     }
+                                     }
+                  },
+                  {
+                      "id":  "qa-if-encaminhar",
+                      "name":  "IF Encaminhar Humano",
+                      "type":  "n8n-nodes-base.if",
+                      "typeVersion":  2,
+                      "position":  [
+                                       1960,
+                                       300
+                                   ],
+                      "parameters":  {
+                                         "conditions":  {
+                                                            "options":  {
+                                                                            "typeValidation":  "strict"
+                                                                        },
+                                                            "conditions":  [
+                                                                               {
+                                                                                   "id":  "cond-encaminhar",
+                                                                                   "leftValue":  "={{ $(\u0027Processa Resposta Claude\u0027).first().json.encaminhar_humano }}",
+                                                                                   "rightValue":  true,
+                                                                                   "operator":  {
+                                                                                                    "type":  "boolean",
+                                                                                                    "operation":  "equals"
+                                                                                                }
+                                                                               }
+                                                                           ],
+                                                            "combinator":  "and"
+                                                        }
+                                     }
+                  },
+                  {
+                      "id":  "qa-propoe-agenda",
+                      "name":  "Dispara Propoe Agendamento",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       2160,
+                                       160
+                                   ],
+                      "parameters":  {
+                                         "method":  "POST",
+                                         "url":  "https://miyakestrategy.app.n8n.cloud/webhook/hive-agendamento",
+                                         "sendBody":  true,
+                                         "contentType":  "raw",
+                                         "rawContentType":  "application/json",
+                                         "body":  "={\n  \"tipo\": \"propoe\",\n  \"telefone\": \"{{ $(\u0027Processa Resposta Claude\u0027).first().json.Telefone }}\",\n  \"nome\": \"{{ $(\u0027Processa Resposta Claude\u0027).first().json.Nome }}\"\n}",
+                                         "options":  {
+                                                         "timeout":  15000
+                                                     }
+                                     }
+                  },
+                  {
+                      "id":  "gh-01-prompt",
+                      "name":  "Busca Prompt GitHub",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       760,
+                                       160
+                                   ],
+                      "parameters":  {
+                                         "method":  "GET",
+                                         "url":  "https://raw.githubusercontent.com/LucianoMiyake/hive-energy-sol/main/prompt_sol.md",
+                                         "options":  {
+                                                         "timeout":  10000
+                                                     }
+                                     }
+                  },
+                  {
+                      "id":  "gh-02-config",
+                      "name":  "Busca Config GitHub",
+                      "type":  "n8n-nodes-base.httpRequest",
+                      "typeVersion":  4.2,
+                      "position":  [
+                                       960,
+                                       160
+                                   ],
+                      "parameters":  {
+                                         "method":  "GET",
+                                         "url":  "https://raw.githubusercontent.com/LucianoMiyake/hive-energy-sol/main/tabela_descontos.json",
+                                         "options":  {
+                                                         "timeout":  10000
+                                                     }
+                                     }
+                  }
+              ],
+    "connections":  {
+                        "Webhook Bolten":  {
+                                               "main":  [
+                                                            [
+                                                                {
+                                                                    "node":  "Extrai Dados Webhook",
+                                                                    "type":  "main",
+                                                                    "index":  0
+                                                                }
+                                                            ]
+                                                        ]
+                                           },
+                        "Extrai Dados Webhook":  {
+                                                     "main":  [
+                                                                  [
+                                                                      {
+                                                                          "node":  "Busca Lead no Sheets",
+                                                                          "type":  "main",
+                                                                          "index":  0
+                                                                      }
+                                                                  ]
+                                                              ]
+                                                 },
+                        "Busca Lead no Sheets":  {
+                                                     "main":  [
+                                                                  [
+                                                                      {
+                                                                          "node":  "IF Aguardando Horario",
+                                                                          "type":  "main",
+                                                                          "index":  0
+                                                                      }
+                                                                  ]
+                                                              ]
+                                                 },
+                        "Prepara Contexto Claude":  {
+                                                        "main":  [
+                                                                     [
+                                                                         {
+                                                                             "node":  "Claude API",
+                                                                             "type":  "main",
+                                                                             "index":  0
+                                                                         }
+                                                                     ]
+                                                                 ]
+                                                    },
+                        "Claude API":  {
+                                           "main":  [
+                                                        [
+                                                            {
+                                                                "node":  "Processa Resposta Claude",
+                                                                "type":  "main",
+                                                                "index":  0
+                                                            }
+                                                        ]
+                                                    ]
+                                       },
+                        "Processa Resposta Claude":  {
+                                                         "main":  [
+                                                                      [
+                                                                          {
+                                                                              "node":  "Envia Mensagem Z-API",
+                                                                              "type":  "main",
+                                                                              "index":  0
+                                                                          }
+                                                                      ]
+                                                                  ]
+                                                     },
+                        "Envia Mensagem Z-API":  {
+                                                     "main":  [
+                                                                  [
+                                                                      {
+                                                                          "node":  "IF Encaminhar Humano",
+                                                                          "type":  "main",
+                                                                          "index":  0
+                                                                      }
+                                                                  ]
+                                                              ]
+                                                 },
+                        "IF Lead Novo":  {
+                                             "main":  [
+                                                          [
+                                                              {
+                                                                  "node":  "Cria Lead no Sheets",
+                                                                  "type":  "main",
+                                                                  "index":  0
+                                                              }
+                                                          ],
+                                                          [
+                                                              {
+                                                                  "node":  "Atualiza Lead no Sheets",
+                                                                  "type":  "main",
+                                                                  "index":  0
+                                                              }
+                                                          ]
+                                                      ]
+                                         },
+                        "IF Aguardando Horario":  {
+                                                      "main":  [
+                                                                   [
+                                                                       {
+                                                                           "node":  "Dispara Confirma Agendamento",
+                                                                           "type":  "main",
+                                                                           "index":  0
+                                                                       }
+                                                                   ],
+                                                                   [
+                                                                       {
+                                                                           "node":  "Busca Prompt GitHub",
+                                                                           "type":  "main",
+                                                                           "index":  0
+                                                                       }
+                                                                   ]
+                                                               ]
+                                                  },
+                        "IF Encaminhar Humano":  {
+                                                     "main":  [
+                                                                  [
+                                                                      {
+                                                                          "node":  "Dispara Propoe Agendamento",
+                                                                          "type":  "main",
+                                                                          "index":  0
+                                                                      }
+                                                                  ],
+                                                                  [
+                                                                      {
+                                                                          "node":  "IF Lead Novo",
+                                                                          "type":  "main",
+                                                                          "index":  0
+                                                                      }
+                                                                  ]
+                                                              ]
+                                                 },
+                        "Dispara Propoe Agendamento":  {
+                                                           "main":  [
+                                                                        [
+                                                                            {
+                                                                                "node":  "IF Lead Novo",
+                                                                                "type":  "main",
+                                                                                "index":  0
+                                                                            }
+                                                                        ]
+                                                                    ]
+                                                       },
+                        "Busca Prompt GitHub":  {
+                                                    "main":  [
+                                                                 [
+                                                                     {
+                                                                         "node":  "Busca Config GitHub",
+                                                                         "type":  "main",
+                                                                         "index":  0
+                                                                     }
+                                                                 ]
+                                                             ]
+                                                },
+                        "Busca Config GitHub":  {
+                                                    "main":  [
+                                                                 [
+                                                                     {
+                                                                         "node":  "Prepara Contexto Claude",
+                                                                         "type":  "main",
+                                                                         "index":  0
+                                                                     }
+                                                                 ]
+                                                             ]
+                                                }
+                    },
+    "active":  false,
+    "settings":  {
+                     "executionOrder":  "v1",
+                     "saveManualExecutions":  true,
+                     "callerPolicy":  "workflowsFromSameOwner",
+                     "errorWorkflow":  ""
+                 },
+    "meta":  {
+                 "templateCredsSetupCompleted":  false
+             }
+}
