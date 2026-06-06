@@ -1,0 +1,22 @@
+{
+  "descontos": {
+    "MG": { "concessionaria": "Cemig",            "faixas": { "1": 15, "2": 20, "3": 25 }, "faixaInicial": 1 },
+    "MT": { "concessionaria": "Energisa",          "faixas": { "1": 10, "2": 15, "3": 20 }, "faixaInicial": 1 },
+    "MS": { "concessionaria": "Energisa",          "faixas": { "1": 10, "2": 15, "3": 20 }, "faixaInicial": 1 },
+    "GO": { "concessionaria": "Equatorial",        "faixas": { "1": 10, "2": 15, "3": 18 }, "faixaInicial": 1 },
+    "BA": { "concessionaria": "Neoenergia Coelba", "faixas": { "2": 12, "3": 15 },          "faixaInicial": 2 },
+    "SP": { "concessionaria": "CPFL Paulista",     "faixas": { "3": 10 },                   "faixaInicial": 3, "observacao": "Apenas interior SP (CPFL). Cidades Enel SP nao tem cobertura." },
+    "PE": { "concessionaria": "Neoenergia",        "faixas": { "2": 12, "3": 15 },          "faixaInicial": 2 },
+    "RJ": { "concessionaria": "Light",             "faixas": { "3": 10 },                   "faixaInicial": 3 },
+    "RN": { "concessionaria": "Cosern",            "faixas": { "2": 10, "3": 13 },          "faixaInicial": 2 },
+    "CE": { "concessionaria": "Enel",              "faixas": { "3": 8 },                    "faixaInicial": 3 },
+    "MA": { "concessionaria": "Equatorial",        "faixas": { "2": 10, "3": 13 },          "faixaInicial": 2 },
+    "PR": { "concessionaria": "COPEL",             "faixas": { "3": 10 },                   "faixaInicial": 3 },
+    "PA": { "concessionaria": "Equatorial",        "faixas": { "3": 10 },                   "faixaInicial": 3 }
+  },
+  "links": {
+    "1": "https://contaenergia.hiveglobal.com.br/?planId=d8fe77ecc3299e92&sellerId=lucianomiyake",
+    "2": "https://contaenergia.hiveglobal.com.br/?planId=22f5eae2411265ef&sellerId=lucianomiyake",
+    "3": "https://contaenergia.hiveglobal.com.br/?planId=de9ef5b8d2eeaae8&sellerId=lucianomiyake"
+  }
+}
