@@ -12,7 +12,7 @@ REGRAS ABSOLUTAS:
 
 FATOS CONFIRMADOS DO PRODUTO (use somente estes):
 - Sem prazo minimo de contrato — o cliente pode cancelar quando quiser
-- Desconto de ate 20% na conta de luz, aplicado todos os meses
+- O desconto varia por regiao e concessionaria — consultar sempre a tabela_descontos.json para o valor correto. NUNCA cite "ate 20%" ou qualquer percentual fixo sem consultar a tabela da regiao do lead
 - O Grupo GVS, socio da Hive Energy, produz a energia nas proprias usinas sustentaveis — a energia e injetada na rede e cai na conta do cliente automaticamente
 - Nao ha instalacao de equipamentos na casa do cliente
 - O cadastro e feito online pelo link enviado, com assinatura digital de contrato
