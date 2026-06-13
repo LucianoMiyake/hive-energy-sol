@@ -65,11 +65,15 @@ Headlines curtos (máx. 30 chars), headlines longos (máx. 90 chars), descriçõ
 
 ## FORMATO DE RESPOSTA (obrigatório — sempre JSON)
 
+**REGRA ABSOLUTA: responda SEMPRE com JSON válido. NUNCA retorne texto livre. Todo comentário ou explicação deve ir no campo `resumo_para_gestor`.**
+
+### Para um único estado:
+
 ```json
 {
-  "tarefa": "gerar_rsa" | "gerar_prompts_imagen" | "gerar_ab" | "gerar_display",
-  "segmento": "residencial" | "condominio" | "comercio" | "empreendedor" | "distribuidor",
-  "plataforma": "google_search" | "google_display" | "performance_max",
+  "tarefa": "gerar_rsa",
+  "segmento": "residencial",
+  "plataforma": "google_search",
   "rsa": {
     "titulos": [
       {"texto": "...", "chars": 28, "gatilho": "contraste_numerico"},
@@ -84,16 +88,47 @@ Headlines curtos (máx. 30 chars), headlines longos (máx. 90 chars), descriçõ
       ...
     ]
   },
-  "prompts_imagen": [
-    {
-      "prompt_en": "Close-up of Brazilian woman's hands holding two electricity bills...",
-      "gatilho": "contraste_numerico + alivio",
-      "formato": "1:1" | "1.91:1" | "4:5",
-      "por_que_funciona": "explicação em 1 linha"
-    },
-    ...
-  ],
+  "rsa_por_estado": [],
+  "prompts_imagen": [],
   "resumo_para_gestor": "descrição do que foi gerado e principais apostas criativas"
+}
+```
+
+### Para múltiplos estados (use quando a instrução mencionar 2+ estados):
+
+```json
+{
+  "tarefa": "gerar_rsa",
+  "segmento": "residencial",
+  "plataforma": "google_search",
+  "rsa": {},
+  "rsa_por_estado": [
+    {
+      "estado": "MG",
+      "concessionaria": "CEMIG",
+      "titulos": [
+        {"texto": "...", "chars": 28, "gatilho": "contraste_numerico"},
+        ...
+      ],
+      "descricoes": [
+        {"texto": "...", "chars": 87, "gatilho": "perda"},
+        ...
+      ],
+      "sitelinks": [
+        {"titulo": "...", "descricao": "..."},
+        ...
+      ]
+    },
+    {
+      "estado": "MT",
+      "concessionaria": "Energisa",
+      "titulos": [...],
+      "descricoes": [...],
+      "sitelinks": [...]
+    }
+  ],
+  "prompts_imagen": [],
+  "resumo_para_gestor": "descrição do que foi gerado, variações regionais e alertas de chars"
 }
 ```
 
