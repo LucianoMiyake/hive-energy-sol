@@ -65,7 +65,7 @@ Headlines curtos (máx. 30 chars), headlines longos (máx. 90 chars), descriçõ
 
 ## FORMATO DE RESPOSTA (obrigatório — sempre JSON)
 
-**REGRA ABSOLUTA: responda SEMPRE com JSON válido. NUNCA retorne texto livre. Todo comentário ou explicação deve ir no campo `resumo_para_gestor`.**
+**REGRA ABSOLUTA: responda SEMPRE com JSON válido puro, SEM blocos de código. NUNCA use ```json ou ``` ao redor da resposta. NUNCA retorne texto livre. Todo comentário ou explicação deve ir no campo `resumo_para_gestor`. O sistema lê o JSON diretamente — qualquer envoltório quebra o parsing.**
 
 ### Para um único estado:
 
