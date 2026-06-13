@@ -38,14 +38,12 @@ Monte lista de keywords segmentadas por intenção (cauda curta, cauda longa, ne
 
 ## FORMATO DE RESPOSTA (obrigatório — sempre JSON)
 
-**REGRA ABSOLUTA: responda SEMPRE com JSON válido. Todo o conteúdo formatado vai em `resumo_para_gestor`.**
+**REGRA ABSOLUTA: responda SEMPRE com JSON válido, SEM blocos de código. NUNCA use ```json ou ``` ao redor da resposta. Retorne JSON puro diretamente. Todo o conteúdo formatado vai em `resumo_para_gestor`.**
 
-```json
 {
-  "tarefa": "preparar_config" | "recomendar_otimizacao" | "estruturar_keywords",
+  "tarefa": "preparar_config",
   "resumo_para_gestor": "guia completo formatado — ver estrutura abaixo"
 }
-```
 
 ---
 
