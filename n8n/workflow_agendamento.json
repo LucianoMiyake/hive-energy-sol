@@ -1,573 +1,546 @@
 ﻿{
-    "name":  "Hive Energy — Agendamento de Call",
-    "nodes":  [
-                  {
-                      "id":  "ag-01-webhook",
-                      "name":  "Webhook Agendamento",
-                      "type":  "n8n-nodes-base.webhook",
-                      "typeVersion":  2,
-                      "position":  [
-                                       100,
-                                       300
-                                   ],
-                      "parameters":  {
-                                         "httpMethod":  "POST",
-                                         "path":  "hive-agendamento",
-                                         "responseMode":  "onReceived",
-                                         "options":  {
-
-                                                     }
-                                     },
-                      "webhookId":  "hive-agendamento-001"
-                  },
-                  {
-                      "id":  "ag-02-if-tipo",
-                      "name":  "IF Tipo",
-                      "type":  "n8n-nodes-base.if",
-                      "typeVersion":  2,
-                      "position":  [
-                                       300,
-                                       300
-                                   ],
-                      "parameters":  {
-                                         "conditions":  {
-                                                            "options":  {
-                                                                            "caseSensitive":  false,
-                                                                            "typeValidation":  "strict"
-                                                                        },
-                                                            "conditions":  [
-                                                                               {
-                                                                                   "id":  "cond-tipo",
-                                                                                   "leftValue":  "={{ $json.body.tipo }}",
-                                                                                   "rightValue":  "propoe",
-                                                                                   "operator":  {
-                                                                                                    "type":  "string",
-                                                                                                    "operation":  "equals"
-                                                                                                }
-                                                                               }
-                                                                           ],
-                                                            "combinator":  "and"
-                                                        }
-                                     }
-                  },
-                  {
-                      "id":  "ag-03-prepara",
-                      "name":  "Prepara Janela",
-                      "type":  "n8n-nodes-base.code",
-                      "typeVersion":  2,
-                      "position":  [
-                                       500,
-                                       180
-                                   ],
-                      "parameters":  {
-                                         "jsCode":  "const data = $json.body;\nconst telefone = data.telefone;\nconst nome = data.nome;\nconst email = data.email || \u0027\u0027;\n\nconst OFFSET_MS = 3 * 60 * 60 * 1000;\nconst agora = new Date();\n\n// Calcular inicio de amanha em BRT\nconst agoraBRT = new Date(agora.getTime() - OFFSET_MS);\nconst amanhaBRT = new Date(agoraBRT);\namanhaBRT.setDate(amanhaBRT.getDate() + 1);\namanhaBRT.setHours(0, 0, 0, 0);\n\n// Converter de volta para UTC\nconst inicioJanela = new Date(amanhaBRT.getTime() + OFFSET_MS);\nconst fimJanela = new Date(inicioJanela.getTime() + 7 * 24 * 60 * 60 * 1000);\n\nreturn [{\n  json: {\n    telefone,\n    nome,\n    janelaInicio: inicioJanela.toISOString(),\n    janelaFim: fimJanela.toISOString(),\n    email\n  }\n}];"
-                                     }
-                  },
-                  {
-                      "id":  "ag-04-google",
-                      "name":  "FreeBusy Google Calendar",
-                      "type":  "n8n-nodes-base.httpRequest",
-                      "typeVersion":  4.2,
-                      "position":  [
-                                       700,
-                                       180
-                                   ],
-                      "parameters":  {
-                                         "method":  "POST",
-                                         "url":  "https://www.googleapis.com/calendar/v3/freeBusy",
-                                         "authentication":  "predefinedCredentialType",
-                                         "nodeCredentialType":  "googleApi",
-                                         "sendHeaders":  true,
-                                         "headerParameters":  {
-                                                                  "parameters":  [
-                                                                                     {
-                                                                                         "name":  "content-type",
-                                                                                         "value":  "application/json"
-                                                                                     }
-                                                                                 ]
-                                                              },
-                                         "sendBody":  true,
-                                         "contentType":  "raw",
-                                         "rawContentType":  "application/json",
-                                         "body":  "={\n  \"timeMin\": \"{{ $json.janelaInicio }}\",\n  \"timeMax\": \"{{ $json.janelaFim }}\",\n  \"timeZone\": \"America/Sao_Paulo\",\n  \"items\": [{\"id\": \"wostki@gmail.com\"}, {\"id\": \"g6bvu0857adrvkpjpupur200vrhl4k97@import.calendar.google.com\"}]\n}",
-                                         "options":  {
-                                                         "timeout":  15000
-                                                     }
-                                     },
-                      "credentials":  {
-                                          "googleApi":  {
-                                                            "id":  "jUmtAElnwHr5Tmuu",
-                                                            "name":  "Google Calendar SA"
-                                                        }
-                                      }
-                  },
-                  {
-                      "id":  "ag-06-slots",
-                      "name":  "Calcula Slots",
-                      "type":  "n8n-nodes-base.code",
-                      "typeVersion":  2,
-                      "position":  [
-                                       1100,
-                                       180
-                                   ],
-                      "parameters":  {
-                                         "jsCode":  "const OFFSET_MS = 3 * 60 * 60 * 1000;\nconst DURACAO_MS = 60 * 60 * 1000;\n\n// Seg-Sex: 09:30-22:30 | Sab: 09:30-17:00 | Dom: bloqueado\nconst BUSINESS = {\n  1: [9, 30, 22, 30],\n  2: [9, 30, 22, 30],\n  3: [9, 30, 22, 30],\n  4: [9, 30, 22, 30],\n  5: [9, 30, 22, 30],\n  6: [9, 30, 17, 0]\n};\n\nconst preparaData = $(\u0027Prepara Janela\u0027).first().json;\nconst telefone = preparaData.telefone;\nconst nome = preparaData.nome;\nconst janelaInicio = new Date(preparaData.janelaInicio);\nconst janelaFim = new Date(preparaData.janelaFim);\nconst emailLead = preparaData.email || \u0027\u0027;\n\n// Google retorna UTC busy times\nconst googleResp = $(\u0027FreeBusy Google Calendar\u0027).first().json;\nconst OUTLOOK_CAL_ID = \u0027g6bvu0857adrvkpjpupur200vrhl4k97@import.calendar.google.com\u0027;\n\nconst googleCal = (googleResp.calendars \u0026\u0026 (googleResp.calendars[\u0027wostki@gmail.com\u0027] || googleResp.calendars.primary)) || {};\nconst googleBusy = (googleCal.busy || []).map(b =\u003e ({ start: b.start, end: b.end }));\n\n// Eventos do Outlook estao 3h adiantados no Google Calendar — corrige subtraindo OFFSET_MS\nconst outlookCalRaw = (googleResp.calendars \u0026\u0026 googleResp.calendars[OUTLOOK_CAL_ID]) || {};\nconst outlookBusy = (outlookCalRaw.busy || []).map(b =\u003e ({\n  start: new Date(new Date(b.start).getTime() + OFFSET_MS).toISOString(),\n  end:   new Date(new Date(b.end).getTime()   + OFFSET_MS).toISOString()\n}));\n\nconst allBusy = [...googleBusy, ...outlookBusy];\n\nfunction isBusy(slotStart, slotEnd) {\n  return allBusy.some(b =\u003e {\n    const bs = new Date(b.start).getTime();\n    const be = new Date(b.end).getTime();\n    return slotStart.getTime() \u003c be \u0026\u0026 slotEnd.getTime() \u003e bs;\n  });\n}\n\nfunction toBRT(utcDate) { return new Date(utcDate.getTime() - OFFSET_MS); }\nfunction toUTC(brtDate) { return new Date(brtDate.getTime() + OFFSET_MS); }\n\nconst DIAS = [\u0027Dom\u0027, \u0027Seg\u0027, \u0027Ter\u0027, \u0027Qua\u0027, \u0027Qui\u0027, \u0027Sex\u0027, \u0027Sab\u0027];\nconst MESES = [\u0027Jan\u0027, \u0027Fev\u0027, \u0027Mar\u0027, \u0027Abr\u0027, \u0027Mai\u0027, \u0027Jun\u0027, \u0027Jul\u0027, \u0027Ago\u0027, \u0027Set\u0027, \u0027Out\u0027, \u0027Nov\u0027, \u0027Dez\u0027];\n\nconst slots = [];\nlet cursor = new Date(janelaInicio);\n\nwhile (cursor \u003c janelaFim \u0026\u0026 slots.length \u003c 3) {\n  const brtCursor = toBRT(cursor);\n  const diaSemana = brtCursor.getDay();\n\n  if (!BUSINESS[diaSemana]) {\n    const brtNextDay = new Date(brtCursor);\n    brtNextDay.setDate(brtNextDay.getDate() + 1);\n    brtNextDay.setHours(0, 0, 0, 0);\n    cursor = toUTC(brtNextDay);\n    continue;\n  }\n\n  const [hIni, mIni, hFim, mFim] = BUSINESS[diaSemana];\n  const brtDay = new Date(brtCursor);\n  brtDay.setHours(0, 0, 0, 0);\n\n  const brtIniExp = new Date(brtDay);\n  brtIniExp.setHours(hIni, mIni, 0, 0);\n  const brtFimExp = new Date(brtDay);\n  brtFimExp.setHours(hFim, mFim, 0, 0);\n\n  if (brtCursor \u003c brtIniExp) {\n    cursor = toUTC(brtIniExp);\n    continue;\n  }\n\n  if (brtCursor \u003e= brtFimExp) {\n    const brtNextDay = new Date(brtDay);\n    brtNextDay.setDate(brtNextDay.getDate() + 1);\n    brtNextDay.setHours(0, 0, 0, 0);\n    cursor = toUTC(brtNextDay);\n    continue;\n  }\n\n  const slotStart = new Date(cursor);\n  const slotEnd = new Date(cursor.getTime() + DURACAO_MS);\n\n  if (slotEnd \u003e toUTC(brtFimExp)) {\n    const brtNextDay = new Date(brtDay);\n    brtNextDay.setDate(brtNextDay.getDate() + 1);\n    brtNextDay.setHours(0, 0, 0, 0);\n    cursor = toUTC(brtNextDay);\n    continue;\n  }\n\n  if (!isBusy(slotStart, slotEnd)) {\n    const brtStart = toBRT(slotStart);\n    const label = DIAS[brtStart.getDay()] + \u0027 \u0027 +\n                  String(brtStart.getDate()).padStart(2, \u00270\u0027) + \u0027/\u0027 +\n                  MESES[brtStart.getMonth()] + \u0027 as \u0027 +\n                  String(brtStart.getHours()).padStart(2, \u00270\u0027) + \u0027:\u0027 +\n                  String(brtStart.getMinutes()).padStart(2, \u00270\u0027) + \u0027h\u0027;\n    slots.push({\n      isoUTC: slotStart.toISOString(),\n      isoFimUTC: slotEnd.toISOString(),\n      label\n    });\n  }\n\n  cursor = new Date(cursor.getTime() + 30 * 60 * 1000);\n}\n\nif (slots.length === 0) {\n  throw new Error(\u0027Nenhum slot disponivel na janela de 7 dias\u0027);\n}\n\nconst linhas = slots.map((s, i) =\u003e (i + 1) + \u0027. \u0027 + s.label).join(\u0027\\n\u0027);\nconst mensagemOpcoes = \u0027Otimo! Veja os horarios disponiveis para nossa call:\\n\\n\u0027 + linhas + \u0027\\n\\nResponda com 1, 2 ou 3 para confirmar o horario de sua preferencia.\u0027;\n\nreturn [{\n  json: {\n    telefone,\n    nome,\n    slots,\n    slotsJson: JSON.stringify(slots),\n    mensagemOpcoes,\n    emailLead\n  }\n}];"
-                                     }
-                  },
-                  {
-                      "id":  "ag-07-salva-slots",
-                      "name":  "Salva Slots Sheets",
-                      "type":  "n8n-nodes-base.googleSheets",
-                      "typeVersion":  4.5,
-                      "position":  [
-                                       1300,
-                                       180
-                                   ],
-                      "parameters":  {
-                                         "operation":  "update",
-                                         "documentId":  {
-                                                            "__rl":  true,
-                                                            "value":  "https://docs.google.com/spreadsheets/d/11pLg8OUm49-GEp853zHgNbqFeIyv2W9xsNbb4_NjCaI/edit?gid=151741956#gid=151741956",
-                                                            "mode":  "url"
-                                                        },
-                                         "sheetName":  {
-                                                           "__rl":  true,
-                                                           "value":  "Leads",
-                                                           "mode":  "name"
-                                                       },
-                                         "columns":  {
-                                                         "mappingMode":  "defineBelow",
-                                                         "value":  {
-                                                                       "Telefone":  "={{ $json.telefone }}",
-                                                                       "Status":  "Aguardando Escolha Horario",
-                                                                       "SlotsProposto":  "={{ $json.slotsJson }}",
-                                                                       "UltimoContato":  "={{ new Date().toISOString() }}"
-                                                                   },
-                                                         "matchingColumns":  [
-                                                                                 "Telefone"
-                                                                             ],
-                                                         "schema":  [
-
-                                                                    ]
-                                                     },
-                                         "options":  {
-
-                                                     }
-                                     },
-                      "credentials":  {
-                                          "googleSheetsOAuth2Api":  {
-                                                                        "id":  "Z2X92BGsOYGnRAz8",
-                                                                        "name":  "Google Sheets OAuth"
-                                                                    }
-                                      }
-                  },
-                  {
-                      "id":  "ag-08-envia-opcoes",
-                      "name":  "Envia Opcoes Z-API",
-                      "type":  "n8n-nodes-base.httpRequest",
-                      "typeVersion":  4.2,
-                      "position":  [
-                                       1500,
-                                       180
-                                   ],
-                      "parameters":  {
-                                         "method":  "POST",
-                                         "url":  "https://api.z-api.io/instances/3F433FCC71C4E22C72227269EBE9199A/token/DDC722677DD43B091EF89EBD/send-text",
-                                         "sendHeaders":  true,
-                                         "headerParameters":  {
-                                                                  "parameters":  [
-                                                                                     {
-                                                                                         "name":  "content-type",
-                                                                                         "value":  "application/json"
-                                                                                     },
-                                                                                     {
-                                                                                         "name":  "Client-Token",
-                                                                                         "value":  "Fbd02060e79e74608b765df205b0402adS"
-                                                                                     }
-                                                                                 ]
-                                                              },
-                                         "sendBody":  true,
-                                         "contentType":  "raw",
-                                         "rawContentType":  "application/json",
-                                         "body":  "={\n  \"phone\": \"{{ $(\u0027Calcula Slots\u0027).first().json.telefone }}\",\n  \"message\": {{ JSON.stringify($(\u0027Calcula Slots\u0027).first().json.mensagemOpcoes) }}\n}",
-                                         "options":  {
-                                                         "timeout":  15000
-                                                     }
-                                     }
-                  },
-                  {
-                      "id":  "ag-09-processa",
-                      "name":  "Processa Escolha",
-                      "type":  "n8n-nodes-base.code",
-                      "typeVersion":  2,
-                      "position":  [
-                                       500,
-                                       420
-                                   ],
-                      "parameters":  {
-                                         "jsCode":  "const data = $json.body;\nconst telefone = data.telefone;\nconst nome = data.nome;\nconst emailLead = data.email || \u0027\u0027;\nconst mensagem = (data.mensagem || \u0027\u0027).trim().toLowerCase();\n\nlet slots = [];\ntry {\n  slots = JSON.parse(data.slots_proposto || \u0027[]\u0027);\n} catch(e) {\n  slots = [];\n}\n\nlet indiceEscolha = -1;\nif (/\\b1\\b|primeiro|primeira/.test(mensagem)) indiceEscolha = 0;\nelse if (/\\b2\\b|segundo|segunda/.test(mensagem)) indiceEscolha = 1;\nelse if (/\\b3\\b|terceiro|terceira/.test(mensagem)) indiceEscolha = 2;\n\nconst escolhaValida = indiceEscolha \u003e= 0 \u0026\u0026 indiceEscolha \u003c slots.length;\n\nif (!escolhaValida) {\n  const linhas = slots.map((s, i) =\u003e (i + 1) + \u0027. \u0027 + s.label).join(\u0027\\n\u0027);\n  return [{ json: { telefone, nome, emailLead, escolhaValida: false, slotsTexto: linhas } }];\n}\n\nconst slotEscolhido = slots[indiceEscolha];\nconst OFFSET_MS = 3 * 60 * 60 * 1000;\n\n// Converte UTC para BRT sem offset (formato local para Google e Outlook com timeZone especificado)\nfunction toBRTLocal(isoUTC) {\n  const d = new Date(new Date(isoUTC).getTime() - OFFSET_MS);\n  return d.toISOString().slice(0, 19);\n}\n\nconst eventoTitulo = \u0027Call Hive - \u0027 + nome;\nconst mensagemConfirmacao = \u0027Perfeito! Call agendada para \u0027 + slotEscolhido.label + \u0027.\\n\\nAte la! Se tiver qualquer duvida, e so me chamar aqui\u0027;\n\nreturn [{\n  json: {\n    telefone,\n    nome,\n    escolhaValida: true,\n    eventoTitulo,\n    eventoInicio: toBRTLocal(slotEscolhido.isoUTC),\n    eventoFim: toBRTLocal(slotEscolhido.isoFimUTC),\n    slotLabel: slotEscolhido.label,\n    mensagemConfirmacao,\n    emailLead\n  }\n}];"
-                                     }
-                  },
-                  {
-                      "id":  "ag-10-if-escolha",
-                      "name":  "IF Escolha Valida",
-                      "type":  "n8n-nodes-base.if",
-                      "typeVersion":  2,
-                      "position":  [
-                                       700,
-                                       420
-                                   ],
-                      "parameters":  {
-                                         "conditions":  {
-                                                            "options":  {
-                                                                            "typeValidation":  "strict"
-                                                                        },
-                                                            "conditions":  [
-                                                                               {
-                                                                                   "id":  "cond-escolha",
-                                                                                   "leftValue":  "={{ $json.escolhaValida }}",
-                                                                                   "rightValue":  true,
-                                                                                   "operator":  {
-                                                                                                    "type":  "boolean",
-                                                                                                    "operation":  "equals"
-                                                                                                }
-                                                                               }
-                                                                           ],
-                                                            "combinator":  "and"
-                                                        }
-                                     }
-                  },
-                  {
-                      "id":  "ag-11-cria-google",
-                      "name":  "Cria Evento Google",
-                      "type":  "n8n-nodes-base.httpRequest",
-                      "typeVersion":  4.2,
-                      "position":  [
-                                       900,
-                                       320
-                                   ],
-                      "parameters":  {
-                                         "method":  "POST",
-                                         "url":  "https://www.googleapis.com/calendar/v3/calendars/wostki%40gmail.com/events?conferenceDataVersion=1",
-                                         "authentication":  "predefinedCredentialType",
-                                         "nodeCredentialType":  "googleApi",
-                                         "sendHeaders":  true,
-                                         "headerParameters":  {
-                                                                  "parameters":  [
-                                                                                     {
-                                                                                         "name":  "content-type",
-                                                                                         "value":  "application/json"
-                                                                                     }
-                                                                                 ]
-                                                              },
-                                         "sendBody":  true,
-                                         "contentType":  "raw",
-                                         "rawContentType":  "application/json",
-                                         "body":  "={\n  \"summary\": \"{{ $json.eventoTitulo }}\",\n  \"start\": { \"dateTime\": \"{{ $json.eventoInicio }}\", \"timeZone\": \"America/Sao_Paulo\" },\n  \"end\":   { \"dateTime\": \"{{ $json.eventoFim }}\",   \"timeZone\": \"America/Sao_Paulo\" },\n  \"attendees\": [{\"email\": \"{{ $json.emailLead }}\"}],\n  \"conferenceData\": {\n    \"createRequest\": {\n      \"requestId\": \"hive-{{ $json.telefone }}\",\n      \"conferenceSolutionKey\": { \"type\": \"hangoutsMeet\" }\n    }\n  }\n}",
-                                         "options":  {
-                                                         "timeout":  15000
-                                                     }
-                                     },
-                      "credentials":  {
-                                          "googleApi":  {
-                                                            "id":  "jUmtAElnwHr5Tmuu",
-                                                            "name":  "Google Calendar SA"
-                                                        }
-                                      }
-                  },
-                  {
-                      "id":  "ag-13-atualiza",
-                      "name":  "Atualiza Sheets Agendado",
-                      "type":  "n8n-nodes-base.googleSheets",
-                      "typeVersion":  4.5,
-                      "position":  [
-                                       1300,
-                                       320
-                                   ],
-                      "parameters":  {
-                                         "operation":  "update",
-                                         "documentId":  {
-                                                            "__rl":  true,
-                                                            "value":  "https://docs.google.com/spreadsheets/d/11pLg8OUm49-GEp853zHgNbqFeIyv2W9xsNbb4_NjCaI/edit?gid=151741956#gid=151741956",
-                                                            "mode":  "url"
-                                                        },
-                                         "sheetName":  {
-                                                           "__rl":  true,
-                                                           "value":  "Leads",
-                                                           "mode":  "name"
-                                                       },
-                                         "columns":  {
-                                                         "mappingMode":  "defineBelow",
-                                                         "value":  {
-                                                                       "Telefone":  "={{ $(\u0027Processa Escolha\u0027).first().json.telefone }}",
-                                                                       "Status":  "Call Agendada",
-                                                                       "SlotsProposto":  "",
-                                                                       "ProximoFollowup":  "",
-                                                                       "UltimoContato":  "={{ new Date().toISOString() }}"
-                                                                   },
-                                                         "matchingColumns":  [
-                                                                                 "Telefone"
-                                                                             ],
-                                                         "schema":  [
-
-                                                                    ]
-                                                     },
-                                         "options":  {
-
-                                                     }
-                                     },
-                      "credentials":  {
-                                          "googleSheetsOAuth2Api":  {
-                                                                        "id":  "Z2X92BGsOYGnRAz8",
-                                                                        "name":  "Google Sheets OAuth"
-                                                                    }
-                                      }
-                  },
-                  {
-                      "id":  "ag-14-confirma",
-                      "name":  "Envia Confirmacao Z-API",
-                      "type":  "n8n-nodes-base.httpRequest",
-                      "typeVersion":  4.2,
-                      "position":  [
-                                       1500,
-                                       320
-                                   ],
-                      "parameters":  {
-                                         "method":  "POST",
-                                         "url":  "https://api.z-api.io/instances/3F433FCC71C4E22C72227269EBE9199A/token/DDC722677DD43B091EF89EBD/send-text",
-                                         "sendHeaders":  true,
-                                         "headerParameters":  {
-                                                                  "parameters":  [
-                                                                                     {
-                                                                                         "name":  "content-type",
-                                                                                         "value":  "application/json"
-                                                                                     },
-                                                                                     {
-                                                                                         "name":  "Client-Token",
-                                                                                         "value":  "Fbd02060e79e74608b765df205b0402adS"
-                                                                                     }
-                                                                                 ]
-                                                              },
-                                         "sendBody":  true,
-                                         "contentType":  "raw",
-                                         "rawContentType":  "application/json",
-                                         "body":  "={\n  \"phone\": \"{{ $(\u0027Processa Escolha\u0027).first().json.telefone }}\",\n  \"message\": \"Perfeito! Call agendada para {{ $(\u0027Processa Escolha\u0027).first().json.slotLabel }}. 🗓️\\n\\nLink Google Meet: {{ $(\u0027Cria Evento Google\u0027).first().json.hangoutLink }}\\n\\nAté lá! Qualquer dúvida é só me chamar 😊\"\n}",
-                                         "options":  {
-                                                         "timeout":  15000
-                                                     }
-                                     }
-                  },
-                  {
-                      "id":  "ag-15-clarifica",
-                      "name":  "Envia Clarificacao Z-API",
-                      "type":  "n8n-nodes-base.httpRequest",
-                      "typeVersion":  4.2,
-                      "position":  [
-                                       900,
-                                       520
-                                   ],
-                      "parameters":  {
-                                         "method":  "POST",
-                                         "url":  "https://api.z-api.io/instances/3F433FCC71C4E22C72227269EBE9199A/token/DDC722677DD43B091EF89EBD/send-text",
-                                         "sendHeaders":  true,
-                                         "headerParameters":  {
-                                                                  "parameters":  [
-                                                                                     {
-                                                                                         "name":  "content-type",
-                                                                                         "value":  "application/json"
-                                                                                     },
-                                                                                     {
-                                                                                         "name":  "Client-Token",
-                                                                                         "value":  "Fbd02060e79e74608b765df205b0402adS"
-                                                                                     }
-                                                                                 ]
-                                                              },
-                                         "sendBody":  true,
-                                         "contentType":  "raw",
-                                         "rawContentType":  "application/json",
-                                         "body":  "={\\n  \"phone\": \"{{ $json.telefone }}\",\\n  \"message\": \"Esses são os horários disponíveis:\\\\n\\\\n{{ $json.slotsTexto }}\\\\n\\\\nResponda com 1, 2 ou 3 para confirmar 😊\"\\n}",
-                                         "options":  {
-                                                         "timeout":  15000
-                                                     }
-                                     }
-                  },
-                  {
-                      "id":  "ag-16-resumo-luciano",
-                      "name":  "Envia Resumo Luciano",
-                      "parameters":  {
-                                         "url":  "https://api.z-api.io/instances/3F433FCC71C4E22C72227269EBE9199A/token/DDC722677DD43B091EF89EBD/send-text",
-                                         "options":  {
-                                                         "timeout":  15000
-                                                     },
-                                         "contentType":  "raw",
-                                         "method":  "POST",
-                                         "sendBody":  true,
-                                         "sendHeaders":  true,
-                                         "body":  "={\n  \"phone\": \"5511986854625\",\n  \"message\": \"📋 *Nova call agendada!*\\n\\n👤 *{{ $(\u0027Processa Escolha\u0027).first().json.nome }}*\\n📱 {{ $(\u0027Processa Escolha\u0027).first().json.telefone }}\\n🗓 {{ $(\u0027Processa Escolha\u0027).first().json.slotLabel }}\\n\\n🔗 Meet: {{ $(\u0027Cria Evento Google\u0027).first().json.hangoutLink }}\\n\\nHistórico completo no Google Sheets.\"\n}",
-                                         "headerParameters":  {
-                                                                  "parameters":  [
-                                                                                     {
-                                                                                         "value":  "application/json",
-                                                                                         "name":  "content-type"
-                                                                                     },
-                                                                                     {
-                                                                                         "value":  "Fbd02060e79e74608b765df205b0402adS",
-                                                                                         "name":  "Client-Token"
-                                                                                     }
-                                                                                 ]
-                                                              },
-                                         "rawContentType":  "application/json"
-                                     },
-                      "type":  "n8n-nodes-base.httpRequest",
-                      "position":  [
-                                       2392,
-                                       720
-                                   ],
-                      "typeVersion":  4.2
-                  }
-              ],
-    "connections":  {
-                        "Webhook Agendamento":  {
-                                                    "main":  [
-                                                                 [
-                                                                     {
-                                                                         "node":  "IF Tipo",
-                                                                         "type":  "main",
-                                                                         "index":  0
-                                                                     }
-                                                                 ]
-                                                             ]
-                                                },
-                        "IF Tipo":  {
-                                        "main":  [
-                                                     [
-                                                         {
-                                                             "node":  "Prepara Janela",
-                                                             "type":  "main",
-                                                             "index":  0
-                                                         }
-                                                     ],
-                                                     [
-                                                         {
-                                                             "node":  "Processa Escolha",
-                                                             "type":  "main",
-                                                             "index":  0
-                                                         }
-                                                     ]
-                                                 ]
-                                    },
-                        "Prepara Janela":  {
-                                               "main":  [
-                                                            [
-                                                                {
-                                                                    "node":  "FreeBusy Google Calendar",
-                                                                    "type":  "main",
-                                                                    "index":  0
-                                                                }
-                                                            ]
-                                                        ]
-                                           },
-                        "FreeBusy Google Calendar":  {
-                                                         "main":  [
-                                                                      [
-                                                                          {
-                                                                              "node":  "Calcula Slots",
-                                                                              "type":  "main",
-                                                                              "index":  0
-                                                                          }
-                                                                      ]
-                                                                  ]
-                                                     },
-                        "Calcula Slots":  {
-                                              "main":  [
-                                                           [
-                                                               {
-                                                                   "node":  "Salva Slots Sheets",
-                                                                   "type":  "main",
-                                                                   "index":  0
-                                                               }
-                                                           ]
-                                                       ]
-                                          },
-                        "Salva Slots Sheets":  {
-                                                   "main":  [
-                                                                [
-                                                                    {
-                                                                        "node":  "Envia Opcoes Z-API",
-                                                                        "type":  "main",
-                                                                        "index":  0
-                                                                    }
-                                                                ]
-                                                            ]
-                                               },
-                        "Processa Escolha":  {
-                                                 "main":  [
-                                                              [
-                                                                  {
-                                                                      "node":  "IF Escolha Valida",
-                                                                      "type":  "main",
-                                                                      "index":  0
-                                                                  }
-                                                              ]
-                                                          ]
-                                             },
-                        "IF Escolha Valida":  {
-                                                  "main":  [
-                                                               [
-                                                                   {
-                                                                       "node":  "Cria Evento Google",
-                                                                       "type":  "main",
-                                                                       "index":  0
-                                                                   }
-                                                               ],
-                                                               [
-                                                                   {
-                                                                       "node":  "Envia Clarificacao Z-API",
-                                                                       "type":  "main",
-                                                                       "index":  0
-                                                                   }
-                                                               ]
-                                                           ]
-                                              },
-                        "Cria Evento Google":  {
-                                                   "main":  [
-                                                                [
-                                                                    {
-                                                                        "node":  "Atualiza Sheets Agendado",
-                                                                        "type":  "main",
-                                                                        "index":  0
-                                                                    }
-                                                                ]
-                                                            ]
-                                               },
-                        "Atualiza Sheets Agendado":  {
-                                                         "main":  [
-                                                                      [
-                                                                          {
-                                                                              "node":  "Envia Confirmacao Z-API",
-                                                                              "type":  "main",
-                                                                              "index":  0
-                                                                          }
-                                                                      ]
-                                                                  ]
-                                                     },
-                        "Envia Confirmacao Z-API":  {
-                                                        "main":  [
-                                                                     {
-                                                                         "node":  "Envia Resumo Luciano",
-                                                                         "type":  "main",
-                                                                         "index":  0
-                                                                     }
-                                                                 ]
-                                                    }
+    "name": "Hive Energy — Agendamento de Call",
+    "nodes": [
+        {
+            "id": "6e82577a-420b-4c9d-8bca-e03e258f7d7e",
+            "name": "Webhook Agendamento",
+            "type": "n8n-nodes-base.webhook",
+            "typeVersion": 2,
+            "position": [784, 704],
+            "parameters": {
+                "httpMethod": "POST",
+                "path": "hive-agendamento",
+                "options": {}
+            },
+            "webhookId": "hive-agendamento-001"
+        },
+        {
+            "id": "36a1a9ef-21d5-4384-8b10-188325ab19aa",
+            "name": "IF Tipo",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 2,
+            "position": [992, 704],
+            "parameters": {
+                "conditions": {
+                    "options": { "caseSensitive": false, "typeValidation": "strict", "version": 1 },
+                    "conditions": [
+                        {
+                            "id": "cond-tipo",
+                            "leftValue": "={{ $json.body.tipo }}",
+                            "rightValue": "propoe",
+                            "operator": { "type": "string", "operation": "equals" }
+                        }
+                    ],
+                    "combinator": "and"
+                },
+                "options": {}
+            }
+        },
+        {
+            "id": "5c151134-6400-4ce9-99aa-3ca83dc63a52",
+            "name": "Prepara Janela",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [1184, 576],
+            "parameters": {
+                "jsCode": "const data = $json.body;\nconst telefone = data.telefone;\nconst nome = data.nome;\n\nconst OFFSET_MS = 3 * 60 * 60 * 1000;\nconst agora = new Date();\n\nconst agoraBRT = new Date(agora.getTime() - OFFSET_MS);\nconst amanhaBRT = new Date(agoraBRT);\namanhaBRT.setDate(amanhaBRT.getDate() + 1);\namanhaBRT.setHours(0, 0, 0, 0);\n\nconst inicioJanela = new Date(amanhaBRT.getTime() + OFFSET_MS);\nconst fimJanela = new Date(inicioJanela.getTime() + 7 * 24 * 60 * 60 * 1000);\n\nreturn [{\n  json: {\n    telefone,\n    nome,\n    janelaInicio: inicioJanela.toISOString(),\n    janelaFim: fimJanela.toISOString()\n  }\n}];"
+            }
+        },
+        {
+            "id": "33f8add1-2dc5-43f2-bceb-aea56309e33d",
+            "name": "FreeBusy Google Calendar",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [1392, 576],
+            "parameters": {
+                "method": "POST",
+                "url": "https://www.googleapis.com/calendar/v3/freeBusy",
+                "authentication": "predefinedCredentialType",
+                "nodeCredentialType": "googleApi",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [{ "name": "content-type", "value": "application/json" }]
+                },
+                "sendBody": true,
+                "contentType": "raw",
+                "rawContentType": "application/json",
+                "body": "={\n  \"timeMin\": \"{{ $json.janelaInicio }}\",\n  \"timeMax\": \"{{ $json.janelaFim }}\",\n  \"timeZone\": \"America/Sao_Paulo\",\n  \"items\": [{\"id\": \"wostki@gmail.com\"}]\n}",
+                "options": { "timeout": 15000 }
+            },
+            "credentials": {
+                "googleApi": { "id": "jUmtAElnwHr5Tmuu", "name": "Google Calendar SA" }
+            }
+        },
+        {
+            "id": "295f8bb4-0b2e-4496-a938-1fb09e958f74",
+            "name": "Get Nespon Events",
+            "type": "n8n-nodes-base.googleCalendar",
+            "typeVersion": 1.3,
+            "position": [1600, 576],
+            "parameters": {
+                "resource": "event",
+                "operation": "getAll",
+                "calendar": {
+                    "__rl": true,
+                    "value": "g6bvu0857adrvkpjpupur200vrhl4k97@import.calendar.google.com",
+                    "mode": "id"
+                },
+                "returnAll": true,
+                "timeMin": "={{ $('Prepara Janela').first().json.janelaInicio }}",
+                "timeMax": "={{ $('Prepara Janela').first().json.janelaFim }}",
+                "options": { "singleEvents": true }
+            },
+            "credentials": {
+                "googleCalendarOAuth2Api": { "id": "H1jIFrgymzvxJ6GM", "name": "Google Calendar OAuth2" }
+            }
+        },
+        {
+            "id": "ef7c9d4e-4354-4318-8d42-2ccd0d175b8c",
+            "name": "Calcula Slots",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [1792, 576],
+            "parameters": {
+                "jsCode": "const OFFSET_MS = 3 * 60 * 60 * 1000;\nconst DURACAO_MS = 60 * 60 * 1000;\n\nconst BUSINESS = {\n  1: [9, 30, 22, 30],\n  2: [9, 30, 22, 30],\n  3: [9, 30, 22, 30],\n  4: [9, 30, 22, 30],\n  5: [9, 30, 22, 30],\n  6: [9, 30, 17, 0]\n};\n\nconst preparaData = $('Prepara Janela').first().json;\nconst telefone = preparaData.telefone;\nconst nome = preparaData.nome;\nconst janelaInicio = new Date(preparaData.janelaInicio);\nconst janelaFim = new Date(preparaData.janelaFim);\n\nconst googleResp = $('FreeBusy Google Calendar').first().json;\nconst googleCal = (googleResp.calendars && (googleResp.calendars['wostki@gmail.com'] || googleResp.calendars.primary)) || {};\nconst googleBusy = (googleCal.busy || []).map(b => ({ start: b.start, end: b.end }));\n\n// Nespon: se dateTime ja tem timezone (Z ou +/-HH:MM), usar direto; se nao, +3h (BRT como UTC)\nfunction adjustNespon(obj) {\n  const dateStr = obj.dateTime || obj.date;\n  if (!dateStr) return null;\n  const ms = new Date(dateStr).getTime();\n  if (!obj.timeZone || obj.timeZone === 'UTC') return ms + OFFSET_MS;\n  return ms;\n}\n\nconst nesponEvents = $('Get Nespon Events').all();\nconst nesponBusy = nesponEvents\n  .filter(e => e.json && e.json.start && e.json.end)\n  .map(e => {\n    const startMs = adjustNespon(e.json.start);\n    const endMs = adjustNespon(e.json.end);\n    if (!startMs || !endMs) return null;\n    return {\n      start: new Date(startMs).toISOString(),\n      end:   new Date(endMs).toISOString()\n    };\n  })\n  .filter(Boolean);\n\nconst allBusy = [...googleBusy, ...nesponBusy];\n\nfunction isBusy(slotStart, slotEnd) {\n  return allBusy.some(b => {\n    const bs = new Date(b.start).getTime();\n    const be = new Date(b.end).getTime();\n    return slotStart.getTime() < be && slotEnd.getTime() > bs;\n  });\n}\n\nfunction toBRT(utcDate) { return new Date(utcDate.getTime() - OFFSET_MS); }\nfunction toUTC(brtDate) { return new Date(brtDate.getTime() + OFFSET_MS); }\n\nconst DIAS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sab'];\nconst MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];\n\nconst slots = [];\nlet cursor = new Date(janelaInicio);\n\nwhile (cursor < janelaFim && slots.length < 3) {\n  const brtCursor = toBRT(cursor);\n  const diaSemana = brtCursor.getDay();\n\n  if (!BUSINESS[diaSemana]) {\n    const brtNextDay = new Date(brtCursor);\n    brtNextDay.setDate(brtNextDay.getDate() + 1);\n    brtNextDay.setHours(0, 0, 0, 0);\n    cursor = toUTC(brtNextDay);\n    continue;\n  }\n\n  const [hIni, mIni, hFim, mFim] = BUSINESS[diaSemana];\n  const brtDay = new Date(brtCursor);\n  brtDay.setHours(0, 0, 0, 0);\n\n  const brtIniExp = new Date(brtDay);\n  brtIniExp.setHours(hIni, mIni, 0, 0);\n  const brtFimExp = new Date(brtDay);\n  brtFimExp.setHours(hFim, mFim, 0, 0);\n\n  if (brtCursor < brtIniExp) {\n    cursor = toUTC(brtIniExp);\n    continue;\n  }\n\n  if (brtCursor >= brtFimExp) {\n    const brtNextDay = new Date(brtDay);\n    brtNextDay.setDate(brtNextDay.getDate() + 1);\n    brtNextDay.setHours(0, 0, 0, 0);\n    cursor = toUTC(brtNextDay);\n    continue;\n  }\n\n  const slotStart = new Date(cursor);\n  const slotEnd = new Date(cursor.getTime() + DURACAO_MS);\n\n  if (slotEnd > toUTC(brtFimExp)) {\n    const brtNextDay = new Date(brtDay);\n    brtNextDay.setDate(brtNextDay.getDate() + 1);\n    brtNextDay.setHours(0, 0, 0, 0);\n    cursor = toUTC(brtNextDay);\n    continue;\n  }\n\n  if (!isBusy(slotStart, slotEnd)) {\n    const brtStart = toBRT(slotStart);\n    const label = DIAS[brtStart.getDay()] + ' ' +\n                  String(brtStart.getDate()).padStart(2, '0') + '/' +\n                  MESES[brtStart.getMonth()] + ' as ' +\n                  String(brtStart.getHours()).padStart(2, '0') + ':' +\n                  String(brtStart.getMinutes()).padStart(2, '0') + 'h';\n    slots.push({\n      isoUTC: slotStart.toISOString(),\n      isoFimUTC: slotEnd.toISOString(),\n      label\n    });\n  }\n\n  cursor = new Date(cursor.getTime() + 30 * 60 * 1000);\n}\n\nif (slots.length === 0) {\n  throw new Error('Nenhum slot disponivel na janela de 7 dias');\n}\n\nconst linhas = slots.map((s, i) => (i + 1) + '. ' + s.label).join('\\n');\nconst mensagemOpcoes = 'Otimo! Veja os horarios disponiveis para nossa call:\\n\\n' + linhas + '\\n\\nResponda com 1, 2 ou 3 para confirmar o horario de sua preferencia.';\n\nreturn [{\n  json: {\n    telefone,\n    nome,\n    slots,\n    slotsJson: JSON.stringify(slots),\n    mensagemOpcoes\n  }\n}];"
+            }
+        },
+        {
+            "id": "4245e565-c1b7-4411-91c2-d79e1b26b7e6",
+            "name": "Salva Slots Sheets",
+            "type": "n8n-nodes-base.googleSheets",
+            "typeVersion": 4.5,
+            "position": [1984, 576],
+            "parameters": {
+                "operation": "update",
+                "documentId": {
+                    "__rl": true,
+                    "value": "https://docs.google.com/spreadsheets/d/11pLg8OUm49-GEp853zHgNbqFeIyv2W9xsNbb4_NjCaI/edit?gid=151741956#gid=151741956",
+                    "mode": "url"
+                },
+                "sheetName": { "__rl": true, "value": "Leads", "mode": "name" },
+                "columns": {
+                    "mappingMode": "defineBelow",
+                    "value": {
+                        "Telefone": "={{ $json.telefone }}",
+                        "Status": "Aguardando Escolha Horario",
+                        "SlotsProposto": "={{ $json.slotsJson }}",
+                        "UltimoContato": "={{ new Date().toISOString() }}",
+                        "row_number": 0
                     },
-    "active":  false,
-    "settings":  {
-                     "executionOrder":  "v1",
-                     "saveManualExecutions":  true,
-                     "errorWorkflow":  ""
-                 },
-    "meta":  {
-                 "templateCredsSetupCompleted":  false
-             }
+                    "matchingColumns": ["Telefone"],
+                    "schema": []
+                },
+                "options": {}
+            },
+            "credentials": {
+                "googleSheetsOAuth2Api": { "id": "Z2X92BGsOYGnRAz8", "name": "Google Sheets OAuth" }
+            }
+        },
+        {
+            "id": "4b502097-d075-498e-9e2b-654b5da5890c",
+            "name": "Envia Opcoes Z-API",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [2192, 576],
+            "parameters": {
+                "method": "POST",
+                "url": "https://api.z-api.io/instances/3F433FCC71C4E22C72227269EBE9199A/token/DDC722677DD43B091EF89EBD/send-text",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        { "name": "content-type", "value": "application/json" },
+                        { "name": "Client-Token", "value": "Fbd02060e79e74608b765df205b0402adS" }
+                    ]
+                },
+                "sendBody": true,
+                "contentType": "raw",
+                "rawContentType": "application/json",
+                "body": "={\n  \"phone\": \"{{ $('Calcula Slots').first().json.telefone }}\",\n  \"message\": {{ JSON.stringify($('Calcula Slots').first().json.mensagemOpcoes) }}\n}",
+                "options": { "timeout": 15000 }
+            }
+        },
+        {
+            "id": "deb4c233-5c36-4a08-92f1-335eeb974255",
+            "name": "Processa Escolha",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [1184, 816],
+            "parameters": {
+                "jsCode": "const data = $json.body;\nconst telefone = data.telefone;\nconst nome = data.nome;\nconst emailLead = data.email || '';\nconst mensagem = (data.mensagem || '').trim().toLowerCase();\n\nlet slots = [];\ntry {\n  const raw = data.slots_proposto;\n  if (Array.isArray(raw)) {\n    slots = raw;\n  } else {\n    slots = JSON.parse(raw || '[]');\n  }\n} catch(e) {\n  slots = [];\n}\n\n// Checar pedidoOutroDia ANTES de extrair indice para evitar\n// falso-positivo: 'segunda' como 'segunda-feira' vs 'segunda opcao'\nconst pedidoOutroDia = /outro\\s*dia|outra\\s*data|outros\\s*hor[aá]rios|outros\\s*dias|semana\\s*que\\s*vem|pr[oó]xima\\s*semana|diferente|tem\\s*(mais|outro|outros)|h[aá]\\s*(outro|outros)|existem?\\s*(outro|outros)/.test(mensagem) ||\n  /\\b(segunda|ter[çc]a|quarta|quinta|sexta|s[aá]bado)\\b/.test(mensagem);\n\nlet indiceEscolha = -1;\nif (!pedidoOutroDia) {\n  if (/\\b1\\b|primeiro|primeira/.test(mensagem)) indiceEscolha = 0;\n  else if (/\\b2\\b|segundo|segunda/.test(mensagem)) indiceEscolha = 1;\n  else if (/\\b3\\b|terceiro|terceira/.test(mensagem)) indiceEscolha = 2;\n}\n\nconst escolhaValida = indiceEscolha >= 0 && indiceEscolha < slots.length;\n\nif (!escolhaValida) {\n  const linhas = slots.map((s, i) => (i + 1) + '. ' + s.label).join('\\n');\n  return [{ json: { telefone, nome, emailLead, escolhaValida: false, pedidoOutroDia, slotsTexto: linhas, slots_proposto: data.slots_proposto } }];\n}\n\nconst slotEscolhido = slots[indiceEscolha];\nconst OFFSET_MS = 3 * 60 * 60 * 1000;\n\nfunction toBRTLocal(isoUTC) {\n  const d = new Date(new Date(isoUTC).getTime() - OFFSET_MS);\n  return d.toISOString().slice(0, 19);\n}\n\nconst eventoTitulo = 'Call Hive - ' + nome;\nconst mensagemConfirmacao = 'Perfeito! Call agendada para ' + slotEscolhido.label + '.\\n\\nAte la! Se tiver qualquer duvida, e so me chamar aqui';\n\nreturn [{\n  json: {\n    telefone, nome, escolhaValida: true, eventoTitulo,\n    eventoInicio: toBRTLocal(slotEscolhido.isoUTC),\n    eventoFim: toBRTLocal(slotEscolhido.isoFimUTC),\n    slotLabel: slotEscolhido.label, mensagemConfirmacao, emailLead\n  }\n}];"
+            }
+        },
+        {
+            "id": "a412e9f4-bfb7-4105-9a37-eb172fb31924",
+            "name": "IF Escolha Valida",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 2,
+            "position": [1392, 816],
+            "parameters": {
+                "conditions": {
+                    "options": { "caseSensitive": true, "typeValidation": "strict", "version": 1 },
+                    "conditions": [
+                        {
+                            "id": "cond-escolha",
+                            "leftValue": "={{ $json.escolhaValida }}",
+                            "rightValue": true,
+                            "operator": { "type": "boolean", "operation": "equals" }
+                        }
+                    ],
+                    "combinator": "and"
+                },
+                "options": {}
+            }
+        },
+        {
+            "id": "e8c421e5-fc09-40d9-b5d8-8c9cb0d05bc0",
+            "name": "Cria Evento Google",
+            "type": "n8n-nodes-base.googleCalendar",
+            "typeVersion": 1.3,
+            "position": [1680, 752],
+            "parameters": {
+                "resource": "event",
+                "operation": "create",
+                "calendar": {
+                    "__rl": true,
+                    "value": "wostki@gmail.com",
+                    "mode": "list",
+                    "cachedResultName": "wostki@gmail.com"
+                },
+                "start": "={{ $json.eventoInicio }}",
+                "end": "={{ $json.eventoFim }}",
+                "additionalFields": {
+                    "summary": "={{ $json.eventoTitulo }}",
+                    "attendees": "={{ $json.emailLead ? [$json.emailLead] : [] }}",
+                    "sendUpdates": "all",
+                    "conferenceDataUi": {
+                        "conferenceDataValues": {
+                            "conferenceSolution": "hangoutsMeet"
+                        }
+                    }
+                }
+            },
+            "credentials": {
+                "googleCalendarOAuth2Api": { "id": "H1jIFrgymzvxJ6GM", "name": "Google Calendar OAuth2" }
+            }
+        },
+        {
+            "id": "f9c23042-5b7a-4b00-ace9-c5186ca19b6a",
+            "name": "Atualiza Sheets Agendado",
+            "type": "n8n-nodes-base.googleSheets",
+            "typeVersion": 4.5,
+            "position": [1984, 720],
+            "parameters": {
+                "operation": "update",
+                "documentId": {
+                    "__rl": true,
+                    "value": "https://docs.google.com/spreadsheets/d/11pLg8OUm49-GEp853zHgNbqFeIyv2W9xsNbb4_NjCaI/edit?gid=151741956#gid=151741956",
+                    "mode": "url"
+                },
+                "sheetName": { "__rl": true, "value": "Leads", "mode": "name" },
+                "columns": {
+                    "mappingMode": "defineBelow",
+                    "value": {
+                        "Telefone": "={{ $('Processa Escolha').first().json.telefone }}",
+                        "Status": "Call Agendada",
+                        "Email": "={{ $('Processa Escolha').first().json.emailLead }}",
+                        "UltimoContato": "={{ new Date().toISOString() }}",
+                        "row_number": 0
+                    },
+                    "matchingColumns": ["Telefone"],
+                    "schema": []
+                },
+                "options": {}
+            },
+            "credentials": {
+                "googleSheetsOAuth2Api": { "id": "Z2X92BGsOYGnRAz8", "name": "Google Sheets OAuth" }
+            }
+        },
+        {
+            "id": "d64125e4-a106-4862-971c-b79693c3f052",
+            "name": "Envia Confirmacao Z-API",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [2192, 720],
+            "parameters": {
+                "method": "POST",
+                "url": "https://api.z-api.io/instances/3F433FCC71C4E22C72227269EBE9199A/token/DDC722677DD43B091EF89EBD/send-text",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        { "name": "content-type", "value": "application/json" },
+                        { "name": "Client-Token", "value": "Fbd02060e79e74608b765df205b0402adS" }
+                    ]
+                },
+                "sendBody": true,
+                "contentType": "raw",
+                "rawContentType": "application/json",
+                "body": "={\n  \"phone\": \"{{ $('Processa Escolha').first().json.telefone }}\",\n  \"message\": \"Perfeito! Call agendada para {{ $('Processa Escolha').first().json.slotLabel }}. 🗓️\\n\\nLink Google Meet: {{ $('Cria Evento Google').first().json.hangoutLink }}\\n\\nAté lá! Qualquer dúvida é só me chamar 😊\"\n}",
+                "options": { "timeout": 15000 }
+            }
+        },
+        {
+            "id": "ag-16-resumo-luciano",
+            "name": "Envia Resumo Luciano",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [2400, 720],
+            "parameters": {
+                "method": "POST",
+                "url": "https://api.z-api.io/instances/3F433FCC71C4E22C72227269EBE9199A/token/DDC722677DD43B091EF89EBD/send-text",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        { "name": "content-type", "value": "application/json" },
+                        { "name": "Client-Token", "value": "Fbd02060e79e74608b765df205b0402adS" }
+                    ]
+                },
+                "sendBody": true,
+                "contentType": "raw",
+                "rawContentType": "application/json",
+                "body": "={\n  \"phone\": \"5511986854625\",\n  \"message\": \"📋 *Nova call agendada!*\\n\\n👤 *{{ $('Processa Escolha').first().json.nome }}*\\n📱 {{ $('Processa Escolha').first().json.telefone }}\\n🗓 {{ $('Processa Escolha').first().json.slotLabel }}\\n\\n🔗 Meet: {{ $('Cria Evento Google').first().json.hangoutLink }}\\n\\nHistórico completo no Google Sheets.\"\n}",
+                "options": { "timeout": 15000 }
+            }
+        },
+        {
+            "id": "bd7ace54-bd30-4280-adb9-291fcdab7b3e",
+            "name": "IF Pedido Outro Dia",
+            "type": "n8n-nodes-base.if",
+            "typeVersion": 2,
+            "position": [1584, 1024],
+            "parameters": {
+                "conditions": {
+                    "options": { "caseSensitive": true, "typeValidation": "strict", "version": 1 },
+                    "conditions": [
+                        {
+                            "id": "cond-outro-dia",
+                            "leftValue": "={{ $json.pedidoOutroDia }}",
+                            "rightValue": true,
+                            "operator": { "type": "boolean", "operation": "equals" }
+                        }
+                    ],
+                    "combinator": "and"
+                },
+                "options": {}
+            }
+        },
+        {
+            "id": "39f5bf6d-82bb-488c-9633-603595dc314b",
+            "name": "Prepara Nova Janela",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [1792, 928],
+            "parameters": {
+                "jsCode": "const OFFSET_MS = 3 * 60 * 60 * 1000;\nconst data = $json;\nconst telefone = data.telefone;\nconst nome = data.nome;\nconst emailLead = data.emailLead || '';\n\nlet slotsAtuais = [];\ntry {\n  slotsAtuais = JSON.parse(data.slots_proposto || '[]');\n} catch(e) {\n  slotsAtuais = [];\n}\n\nconst diasExcluidos = new Set();\nslotsAtuais.forEach(s => {\n  const brt = new Date(new Date(s.isoUTC).getTime() - OFFSET_MS);\n  diasExcluidos.add(brt.toISOString().slice(0, 10));\n});\n\nconst agora = new Date();\nconst agoraBRT = new Date(agora.getTime() - OFFSET_MS);\nconst amanhaBRT = new Date(agoraBRT);\namanhaBRT.setDate(amanhaBRT.getDate() + 1);\namanhaBRT.setHours(0, 0, 0, 0);\nconst inicioJanela = new Date(amanhaBRT.getTime() + OFFSET_MS);\nconst fimJanela = new Date(inicioJanela.getTime() + 14 * 24 * 60 * 60 * 1000);\n\nreturn [{\n  json: {\n    telefone, nome, emailLead,\n    janelaInicio: inicioJanela.toISOString(),\n    janelaFim: fimJanela.toISOString(),\n    diasExcluidos: Array.from(diasExcluidos)\n  }\n}];"
+            }
+        },
+        {
+            "id": "d91c424b-841b-4c7b-96c3-16b9b6e86937",
+            "name": "FreeBusy Nova Janela",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [1984, 928],
+            "parameters": {
+                "method": "POST",
+                "url": "https://www.googleapis.com/calendar/v3/freeBusy",
+                "authentication": "predefinedCredentialType",
+                "nodeCredentialType": "googleApi",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [{ "name": "content-type", "value": "application/json" }]
+                },
+                "sendBody": true,
+                "contentType": "raw",
+                "rawContentType": "application/json",
+                "body": "={\n  \"timeMin\": \"{{ $json.janelaInicio }}\",\n  \"timeMax\": \"{{ $json.janelaFim }}\",\n  \"timeZone\": \"America/Sao_Paulo\",\n  \"items\": [{\"id\": \"wostki@gmail.com\"}]\n}",
+                "options": { "timeout": 15000 }
+            },
+            "credentials": {
+                "googleApi": { "id": "jUmtAElnwHr5Tmuu", "name": "Google Calendar SA" }
+            }
+        },
+        {
+            "id": "a469ce71-985f-462b-97bc-625c60e26e3b",
+            "name": "Get Nespon Nova Janela",
+            "type": "n8n-nodes-base.googleCalendar",
+            "typeVersion": 1.3,
+            "position": [2128, 1184],
+            "parameters": {
+                "resource": "event",
+                "operation": "getAll",
+                "calendar": {
+                    "__rl": true,
+                    "value": "g6bvu0857adrvkpjpupur200vrhl4k97@import.calendar.google.com",
+                    "mode": "id"
+                },
+                "returnAll": true,
+                "timeMin": "={{ $('Prepara Nova Janela').first().json.janelaInicio }}",
+                "timeMax": "={{ $('Prepara Nova Janela').first().json.janelaFim }}",
+                "options": { "singleEvents": true }
+            },
+            "credentials": {
+                "googleCalendarOAuth2Api": { "id": "H1jIFrgymzvxJ6GM", "name": "Google Calendar OAuth2" }
+            }
+        },
+        {
+            "id": "65d28d17-33c0-43d8-9d1d-be7795c9a33d",
+            "name": "Calcula Novos Slots",
+            "type": "n8n-nodes-base.code",
+            "typeVersion": 2,
+            "position": [2224, 928],
+            "parameters": {
+                "jsCode": "const OFFSET_MS = 3 * 60 * 60 * 1000;\nconst DURACAO_MS = 60 * 60 * 1000;\nconst BUSINESS = { 1:[9,30,22,30], 2:[9,30,22,30], 3:[9,30,22,30], 4:[9,30,22,30], 5:[9,30,22,30], 6:[9,30,17,0] };\n\nconst preparaData = $('Prepara Nova Janela').first().json;\nconst telefone = preparaData.telefone;\nconst nome = preparaData.nome;\nconst janelaInicio = new Date(preparaData.janelaInicio);\nconst janelaFim = new Date(preparaData.janelaFim);\nconst emailLead = preparaData.emailLead || '';\nconst diasExcluidos = new Set(preparaData.diasExcluidos || []);\n\nconst googleResp = $('FreeBusy Nova Janela').first().json;\nconst googleCal = (googleResp.calendars && (googleResp.calendars['wostki@gmail.com'] || googleResp.calendars.primary)) || {};\nconst googleBusy = (googleCal.busy || []).map(b => ({ start: b.start, end: b.end }));\n\n// Nespon: se dateTime ja tem timezone (Z ou +/-HH:MM), usar direto; se nao, +3h (BRT como UTC)\nfunction adjustNespon(obj) {\n  const dateStr = obj.dateTime || obj.date;\n  if (!dateStr) return null;\n  const ms = new Date(dateStr).getTime();\n  if (!obj.timeZone || obj.timeZone === 'UTC') return ms + OFFSET_MS;\n  return ms;\n}\n\nconst nesponEvents = $('Get Nespon Nova Janela').all();\nconst nesponBusy = nesponEvents\n  .filter(e => e.json && e.json.start && e.json.end)\n  .map(e => {\n    const startMs = adjustNespon(e.json.start);\n    const endMs = adjustNespon(e.json.end);\n    if (!startMs || !endMs) return null;\n    return {\n      start: new Date(startMs).toISOString(),\n      end:   new Date(endMs).toISOString()\n    };\n  })\n  .filter(Boolean);\n\nconst allBusy = [...googleBusy, ...nesponBusy];\n\nfunction isBusy(s, e) { return allBusy.some(b => s.getTime() < new Date(b.end).getTime() && e.getTime() > new Date(b.start).getTime()); }\nfunction toBRT(d) { return new Date(d.getTime() - OFFSET_MS); }\nfunction toUTC(d) { return new Date(d.getTime() + OFFSET_MS); }\n\nconst DIAS = ['Dom','Seg','Ter','Qua','Qui','Sex','Sab'];\nconst MESES = ['Jan','Fev','Mar','Abr','Mai','Jun','Jul','Ago','Set','Out','Nov','Dez'];\nconst slots = [];\nlet cursor = new Date(janelaInicio);\n\nwhile (cursor < janelaFim && slots.length < 3) {\n  const brtCursor = toBRT(cursor);\n  const diaSemana = brtCursor.getDay();\n  const diaStr = brtCursor.toISOString().slice(0, 10);\n\n  if (diasExcluidos.has(diaStr) || !BUSINESS[diaSemana]) {\n    const next = new Date(brtCursor); next.setDate(next.getDate()+1); next.setHours(0,0,0,0);\n    cursor = toUTC(next); continue;\n  }\n\n  const [hI,mI,hF,mF] = BUSINESS[diaSemana];\n  const brtDay = new Date(brtCursor); brtDay.setHours(0,0,0,0);\n  const brtIni = new Date(brtDay); brtIni.setHours(hI,mI,0,0);\n  const brtFim = new Date(brtDay); brtFim.setHours(hF,mF,0,0);\n\n  if (brtCursor < brtIni) { cursor = toUTC(brtIni); continue; }\n  if (brtCursor >= brtFim) {\n    const next = new Date(brtDay); next.setDate(next.getDate()+1); next.setHours(0,0,0,0);\n    cursor = toUTC(next); continue;\n  }\n\n  const slotStart = new Date(cursor);\n  const slotEnd = new Date(cursor.getTime() + DURACAO_MS);\n\n  if (slotEnd > toUTC(brtFim)) {\n    const next = new Date(brtDay); next.setDate(next.getDate()+1); next.setHours(0,0,0,0);\n    cursor = toUTC(next); continue;\n  }\n\n  if (!isBusy(slotStart, slotEnd)) {\n    const bs = toBRT(slotStart);\n    const label = DIAS[bs.getDay()] + ' ' + String(bs.getDate()).padStart(2,'0') + '/' + MESES[bs.getMonth()] + ' as ' + String(bs.getHours()).padStart(2,'0') + ':' + String(bs.getMinutes()).padStart(2,'0') + 'h';\n    slots.push({ isoUTC: slotStart.toISOString(), isoFimUTC: slotEnd.toISOString(), label });\n  }\n  cursor = new Date(cursor.getTime() + 30*60*1000);\n}\n\nif (slots.length === 0) throw new Error('Nenhum slot em dias alternativos na janela de 14 dias');\n\nconst linhas = slots.map((s,i) => (i+1) + '. ' + s.label).join('\\n');\nconst mensagemOpcoes = 'Claro! Aqui estao opcoes em outros dias:\\n\\n' + linhas + '\\n\\nResponda com 1, 2 ou 3 para confirmar.';\nreturn [{ json: { telefone, nome, slots, slotsJson: JSON.stringify(slots), mensagemOpcoes, emailLead } }];"
+            }
+        },
+        {
+            "id": "c84f7e1f-f52b-445f-9abc-a1b2d78f6ed2",
+            "name": "Salva Novos Slots Sheets",
+            "type": "n8n-nodes-base.googleSheets",
+            "typeVersion": 4.5,
+            "position": [2384, 928],
+            "parameters": {
+                "operation": "update",
+                "documentId": {
+                    "__rl": true,
+                    "value": "https://docs.google.com/spreadsheets/d/11pLg8OUm49-GEp853zHgNbqFeIyv2W9xsNbb4_NjCaI/edit?gid=151741956#gid=151741956",
+                    "mode": "url"
+                },
+                "sheetName": { "__rl": true, "value": "Leads", "mode": "name" },
+                "columns": {
+                    "mappingMode": "defineBelow",
+                    "value": {
+                        "Telefone": "={{ $json.telefone }}",
+                        "Status": "Aguardando Escolha Horario",
+                        "SlotsProposto": "={{ $json.slotsJson }}",
+                        "UltimoContato": "={{ new Date().toISOString() }}"
+                    },
+                    "matchingColumns": ["Telefone"],
+                    "schema": []
+                },
+                "options": {}
+            },
+            "credentials": {
+                "googleSheetsOAuth2Api": { "id": "Z2X92BGsOYGnRAz8", "name": "Google Sheets OAuth" }
+            }
+        },
+        {
+            "id": "a7e60f17-c232-472b-9458-d7d7baf4a5c0",
+            "name": "Envia Novas Opcoes Z-API",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [2592, 928],
+            "parameters": {
+                "method": "POST",
+                "url": "https://api.z-api.io/instances/3F433FCC71C4E22C72227269EBE9199A/token/DDC722677DD43B091EF89EBD/send-text",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        { "name": "content-type", "value": "application/json" },
+                        { "name": "Client-Token", "value": "Fbd02060e79e74608b765df205b0402adS" }
+                    ]
+                },
+                "sendBody": true,
+                "contentType": "raw",
+                "rawContentType": "application/json",
+                "body": "={\n  \"phone\": \"{{ $('Calcula Novos Slots').first().json.telefone }}\",\n  \"message\": {{ JSON.stringify($('Calcula Novos Slots').first().json.mensagemOpcoes) }}\n}",
+                "options": { "timeout": 15000 }
+            }
+        },
+        {
+            "id": "c1004b30-02e9-49bf-bf87-def076702a66",
+            "name": "Envia Clarificacao Z-API",
+            "type": "n8n-nodes-base.httpRequest",
+            "typeVersion": 4.2,
+            "position": [1792, 1168],
+            "parameters": {
+                "method": "POST",
+                "url": "https://api.z-api.io/instances/3F433FCC71C4E22C72227269EBE9199A/token/DDC722677DD43B091EF89EBD/send-text",
+                "sendHeaders": true,
+                "headerParameters": {
+                    "parameters": [
+                        { "name": "content-type", "value": "application/json" },
+                        { "name": "Client-Token", "value": "Fbd02060e79e74608b765df205b0402adS" }
+                    ]
+                },
+                "sendBody": true,
+                "contentType": "raw",
+                "rawContentType": "application/json",
+                "body": "={\n  \"phone\": \"{{ $json.telefone }}\",\n  \"message\": {{ JSON.stringify('Esses são os horários disponíveis:\\n\\n' + $json.slotsTexto + '\\n\\nResponda com 1, 2 ou 3 para confirmar 😊') }}\n}",
+                "options": { "timeout": 15000 }
+            }
+        }
+    ],
+    "connections": {
+        "Webhook Agendamento": {
+            "main": [[{ "node": "IF Tipo", "type": "main", "index": 0 }]]
+        },
+        "IF Tipo": {
+            "main": [
+                [{ "node": "Prepara Janela", "type": "main", "index": 0 }],
+                [{ "node": "Processa Escolha", "type": "main", "index": 0 }]
+            ]
+        },
+        "Prepara Janela": {
+            "main": [[{ "node": "FreeBusy Google Calendar", "type": "main", "index": 0 }]]
+        },
+        "FreeBusy Google Calendar": {
+            "main": [[{ "node": "Get Nespon Events", "type": "main", "index": 0 }]]
+        },
+        "Get Nespon Events": {
+            "main": [[{ "node": "Calcula Slots", "type": "main", "index": 0 }]]
+        },
+        "Calcula Slots": {
+            "main": [[{ "node": "Salva Slots Sheets", "type": "main", "index": 0 }]]
+        },
+        "Salva Slots Sheets": {
+            "main": [[{ "node": "Envia Opcoes Z-API", "type": "main", "index": 0 }]]
+        },
+        "Processa Escolha": {
+            "main": [[{ "node": "IF Escolha Valida", "type": "main", "index": 0 }]]
+        },
+        "IF Escolha Valida": {
+            "main": [
+                [{ "node": "Cria Evento Google", "type": "main", "index": 0 }],
+                [{ "node": "IF Pedido Outro Dia", "type": "main", "index": 0 }]
+            ]
+        },
+        "Cria Evento Google": {
+            "main": [[{ "node": "Atualiza Sheets Agendado", "type": "main", "index": 0 }]]
+        },
+        "Atualiza Sheets Agendado": {
+            "main": [[{ "node": "Envia Confirmacao Z-API", "type": "main", "index": 0 }]]
+        },
+        "Envia Confirmacao Z-API": {
+            "main": [[{ "node": "Envia Resumo Luciano", "type": "main", "index": 0 }]]
+        },
+        "IF Pedido Outro Dia": {
+            "main": [
+                [{ "node": "Prepara Nova Janela", "type": "main", "index": 0 }],
+                [{ "node": "Envia Clarificacao Z-API", "type": "main", "index": 0 }]
+            ]
+        },
+        "Prepara Nova Janela": {
+            "main": [[{ "node": "FreeBusy Nova Janela", "type": "main", "index": 0 }]]
+        },
+        "FreeBusy Nova Janela": {
+            "main": [[{ "node": "Get Nespon Nova Janela", "type": "main", "index": 0 }]]
+        },
+        "Get Nespon Nova Janela": {
+            "main": [[{ "node": "Calcula Novos Slots", "type": "main", "index": 0 }]]
+        },
+        "Calcula Novos Slots": {
+            "main": [[{ "node": "Salva Novos Slots Sheets", "type": "main", "index": 0 }]]
+        },
+        "Salva Novos Slots Sheets": {
+            "main": [[{ "node": "Envia Novas Opcoes Z-API", "type": "main", "index": 0 }]]
+        }
+    },
+    "active": false,
+    "settings": {
+        "executionOrder": "v1",
+        "saveManualExecutions": true,
+        "errorWorkflow": ""
+    },
+    "meta": {
+        "templateCredsSetupCompleted": false
+    }
 }
